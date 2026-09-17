@@ -13,6 +13,7 @@ interface LiveStatus {
 export interface VoicePanelOptions {
   getSlug(): string | null;
   getShareToken(): string | null;
+  getApiBase(): string;
   getAuthorActor(): string;
   editor: VoiceEditorApi;
 }
@@ -153,7 +154,7 @@ export class VoicePanel {
   constructor(private readonly options: VoicePanelOptions) {}
 
   async mount(): Promise<void> {
-    this.status = await fetch('/api/live/status')
+    this.status = await fetch(`${this.options.getApiBase()}/live/status`)
       .then((response) => (response.ok ? (response.json() as Promise<LiveStatus>) : null))
       .catch(() => null);
     // No voice routes on this server: leave the editor exactly as it was.
@@ -218,6 +219,7 @@ export class VoicePanel {
     this.session = new VoiceSession({
       slug,
       shareToken,
+      getApiBase: this.options.getApiBase,
       getAuthorActor: this.options.getAuthorActor,
       editor: this.options.editor,
       events: {

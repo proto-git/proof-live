@@ -10272,11 +10272,15 @@ if (window.location?.pathname?.startsWith('/d/')) {
 }
 
 // Voice editing (Gemini Live). Shared documents only, since minting a voice
-// session requires the document's edit token.
-if (window.location?.pathname?.startsWith('/d/')) {
+// session requires the document's edit token. Called once init() has resolved:
+// before that the editor instance is null, so a voice session started early
+// would have its tools read an empty document and fail to act on it.
+function mountVoicePanel(): void {
+  if (!window.location?.pathname?.startsWith('/d/')) return;
   void new VoicePanel({
     getSlug: () => shareClient.getSlug(),
     getShareToken: () => shareClient.getShareToken(),
+    getApiBase: () => shareClient.getApiBaseUrl(),
     getAuthorActor: () => getCurrentActor(),
     editor: window.proof,
   })
@@ -10338,11 +10342,11 @@ if (window.location?.pathname?.startsWith('/d/')) {
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     console.log('[INIT] DOMContentLoaded - calling init()');
-    window.proof.init();
+    void window.proof.init().then(mountVoicePanel);
   });
 } else {
   console.log('[INIT] DOM ready - calling init() immediately');
-  window.proof.init();
+  void window.proof.init().then(mountVoicePanel);
 }
 
 export default window.proof;

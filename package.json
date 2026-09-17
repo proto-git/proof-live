@@ -12,11 +12,12 @@
     "dev": "vite",
     "build": "vite build && node scripts/finalize-web-build.mjs",
     "serve": "tsx server/index.ts",
-    "test": "npm run test:proof-sdk && npm run test:server-routes-share && npm run test:voice-tools",
+    "test": "npm run test:proof-sdk && npm run test:server-routes-share && npm run test:voice-tools && npm run test:voice-session",
     "test:proof-sdk": "tsx src/tests/proof-sdk-agent-bridge-client.test.ts",
     "test:server-routes-share": "tsx src/tests/server-routes-and-share.test.ts",
     "demo:agent": "npm --workspace proof-example run demo:agent",
-    "test:voice-tools": "tsx src/tests/voice-tools.test.ts"
+    "test:voice-tools": "tsx src/tests/voice-tools.test.ts",
+    "test:voice-session": "tsx src/tests/voice-session.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.879.0",
@@ -65,8 +66,7 @@
     "vite": "^5.0.0"
   },
   "allowScripts": {
-    "better-sqlite3@12.11.1": true,
-    "esbuild@0.28.2": true,
-    "esbuild@0.21.5": true
+    "better-sqlite3": true,
+    "esbuild": true
   }
 }

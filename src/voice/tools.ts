@@ -4,7 +4,7 @@
 // Two paths, chosen by what was verified to be reliable against a live
 // collaborative session:
 //   - Creating suggestions and comments goes through the server's agent bridge
-//     (POST /documents/:slug/ops). The server anchors the quote, records the
+//     (POST /api/agent/:slug/ops). The server anchors the quote, records the
 //     agent as author, shows it in presence, and syncs to every collaborator.
 //   - Accepting and rejecting runs in the editor, because the author is the one
 //     deciding and the result syncs out like any other edit.
@@ -28,6 +28,8 @@ export interface VoiceEditorApi {
 export interface VoiceToolContext {
   slug: string;
   shareToken: string;
+  // Base URL of the document server's API, for example "https://host/api".
+  apiBase: string;
   actor: string;
   // The human at this editor, for example "human:Dan".
   getAuthorActor(): string;
@@ -185,7 +187,7 @@ export class VoiceToolRunner {
     body: Record<string, unknown>,
     options?: { asAuthor?: boolean },
   ): Promise<{ ok: true; markId?: string } | { ok: false; error: string }> {
-    const { slug, shareToken } = this.context;
+    const { slug, shareToken, apiBase } = this.context;
     const actor = options?.asAuthor ? this.context.getAuthorActor() : this.context.actor;
     // One key for every attempt, so a retry can never create the mark twice.
     const idempotencyKey = crypto.randomUUID();
@@ -193,7 +195,10 @@ export class VoiceToolRunner {
     let payload: { success?: boolean; markId?: string; error?: string; code?: string };
 
     for (let attempt = 0; ; attempt++) {
-      response = await fetch(`/documents/${encodeURIComponent(slug)}/ops`, {
+      // The agent bridge is mounted at /documents and at /api/agent. The /api
+      // form goes through the same configured origin (and dev proxy) as the
+      // rest of the share client.
+      response = await fetch(`${apiBase}/agent/${encodeURIComponent(slug)}/ops`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

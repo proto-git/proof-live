@@ -67,6 +67,7 @@ function createHarness(): Harness {
   harness.runner = new VoiceToolRunner({
     slug: 'doc 1',
     shareToken: 'tok',
+    apiBase: 'https://docs.example/api',
     actor: 'ai:gemini-live',
     getAuthorActor: () => 'human:Dan',
     editor,
@@ -92,7 +93,11 @@ async function run(): Promise<void> {
   h = createHarness();
   const suggested = await h.runner.run('suggest_replace', { quote: 'Old line', replacement: 'New line' });
   assertEqual(suggested, { ok: true, id: 'm1', status: 'pending author review' }, 'suggest_replace reports pending');
-  assertEqual(h.requests[0].url, '/documents/doc%201/ops', 'ops endpoint with encoded slug');
+  assertEqual(
+    h.requests[0].url,
+    'https://docs.example/api/agent/doc%201/ops',
+    'ops go to the configured server origin with an encoded slug',
+  );
   assertEqual(
     h.requests[0].body,
     { type: 'suggestion.add', kind: 'replace', quote: 'Old line', content: 'New line', by: 'ai:gemini-live' },

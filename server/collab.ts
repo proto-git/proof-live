@@ -38,6 +38,7 @@ import {
   upsertActiveCollabConnection,
   upsertPersistedGlobalCollabAdmissionGuard,
   updateDocument,
+  updateDocumentAtomicByRevision,
   type DocumentProjectionRow,
   type DocumentRow,
   type ProjectedDocumentRow,
@@ -5719,11 +5720,25 @@ async function seedLegacyDocumentToPersistedYjsAsync(
   // matches the Yjs-derived text, sameAuthoritativeContent() stays false, and
   // the document is stuck with mutationReady=false. Store the normalized form
   // so the baseline and the row agree from the start.
+  //
+  // This function is also reached while loading an existing document that has
+  // no baseline, and `row` was read before several awaits. The write is
+  // therefore conditional on the revision we read: if another mutation landed
+  // in between, its content must win, so we skip normalization rather than
+  // overwrite it with text derived from a stale row.
   const normalizedMarkdown = await deriveMarkdownProjectionFromFragment(ydoc);
   if (normalizedMarkdown && normalizedMarkdown.trim() && normalizedMarkdown !== (row.markdown ?? '')) {
-    updateDocument(slug, normalizedMarkdown, canonicalizeStoredMarks(encodeMarksMap(ydoc.getMap('marks'))));
-    const normalizedRow = getDocumentBySlug(slug);
+    const written = updateDocumentAtomicByRevision(
+      slug,
+      row.revision,
+      normalizedMarkdown,
+      canonicalizeStoredMarks(encodeMarksMap(ydoc.getMap('marks'))),
+    );
+    const normalizedRow = written ? getDocumentBySlug(slug) : null;
     if (normalizedRow) return persistCanonicalYjsBaseline(slug, normalizedRow, ydoc);
+    if (!written) {
+      console.warn('[collab] skipped baseline markdown normalization; document changed during seeding', { slug });
+    }
   }
   return persistCanonicalYjsBaseline(slug, row, ydoc);
 }
