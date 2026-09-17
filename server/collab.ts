@@ -5713,6 +5713,18 @@ async function seedLegacyDocumentToPersistedYjsAsync(
     applyMarksMapDiff(ydoc.getMap('marks'), marks);
   }, 'legacy-seed-markdown');
   await seedFragmentFromLegacyMarkdown(ydoc, markdown);
+
+  // The editor's serializer normalizes markdown (for example "- item" becomes
+  // "* item"). If the stored row keeps the author's original spelling, it never
+  // matches the Yjs-derived text, sameAuthoritativeContent() stays false, and
+  // the document is stuck with mutationReady=false. Store the normalized form
+  // so the baseline and the row agree from the start.
+  const normalizedMarkdown = await deriveMarkdownProjectionFromFragment(ydoc);
+  if (normalizedMarkdown && normalizedMarkdown.trim() && normalizedMarkdown !== (row.markdown ?? '')) {
+    updateDocument(slug, normalizedMarkdown, canonicalizeStoredMarks(encodeMarksMap(ydoc.getMap('marks'))));
+    const normalizedRow = getDocumentBySlug(slug);
+    if (normalizedRow) return persistCanonicalYjsBaseline(slug, normalizedRow, ydoc);
+  }
   return persistCanonicalYjsBaseline(slug, row, ydoc);
 }
 

@@ -16,6 +16,7 @@ import {
   syncCanonicalDocumentStateToCollab,
   stripEphemeralCollabSpans,
   acquireRewriteLock,
+  ensureCanonicalYjsBaselineForDocument,
 } from './collab.js';
 import { getSnapshotPublicUrl, refreshSnapshotForSlug } from './snapshot.js';
 import { executeCanonicalRewrite, mutateCanonicalDocument } from './canonical-document.js';
@@ -784,7 +785,7 @@ function deriveShareCapabilities(role: ShareRole, shareState: string): {
 }
 
 // Create a shared document
-apiRoutes.post('/documents', (req: Request, res: Response) => {
+apiRoutes.post('/documents', async (req: Request, res: Response) => {
   const legacyCreateMode = resolveLegacyCreateMode(getPublicBaseUrl(req));
   if (legacyCreateMode === 'disabled') {
     recordLegacyCreateRouteTelemetry(req, legacyCreateMode, 'blocked_disabled');
@@ -827,6 +828,10 @@ apiRoutes.post('/documents', (req: Request, res: Response) => {
   const ownerSecret = randomUUID();
   const normalizedMarks = canonicalizeStoredMarks(marks ?? {});
   const doc = createDocument(slug, sanitizedMarkdown, normalizedMarks, title, ownerId, ownerSecret);
+  // Seed the Yjs baseline now. Without it a freshly created document never
+  // becomes mutation-ready, and accepting or rejecting suggestions fails with
+  // PROJECTION_STALE (upstream issue #43).
+  await ensureCanonicalYjsBaselineForDocument(slug);
   const defaultAccess = createDocumentAccessToken(slug, 'editor');
   const links = buildShareLink(req, doc.slug);
   const shareUrlWithToken = withShareToken(links.shareUrl, defaultAccess.secret);
@@ -1079,6 +1084,7 @@ export async function handleShareMarkdown(req: Request, res: Response): Promise<
   const slug = generateSlug();
   const ownerSecret = randomUUID();
   const doc = createDocument(slug, sanitizedMarkdown, marks, title, ownerId, ownerSecret);
+  await ensureCanonicalYjsBaselineForDocument(slug);
   const access = createDocumentAccessToken(slug, requestedRole);
   const links = buildShareLink(req, doc.slug);
   const shareUrlWithToken = withShareToken(links.shareUrl, access.secret);
