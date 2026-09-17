@@ -16,6 +16,7 @@ import {
   enforceBridgeClientCompatibility,
 } from './client-capabilities.js';
 import { getBuildInfo } from './build-info.js';
+import { liveRoutes } from './live-routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,6 +48,10 @@ async function main(): Promise<void> {
 
   app.use(express.json({ limit: '10mb' }));
   app.use(express.static(path.join(__dirname, '..', 'public')));
+  // The share page is read from dist/index.html and references /assets/editor.js,
+  // so the built bundle has to be served too (upstream issue #73). index:false
+  // keeps dist/index.html from shadowing the landing page at "/".
+  app.use(express.static(path.join(__dirname, '..', 'dist'), { index: false }));
 
   app.use((req, res, next) => {
     const originHeader = req.header('origin');
@@ -101,6 +106,7 @@ async function main(): Promise<void> {
       <h1>Proof SDK</h1>
       <p>Open-source collaborative markdown editing with provenance tracking and an agent HTTP bridge.</p>
       <p>Start with <code>POST /documents</code>, inspect <a href="/agent-docs">agent docs</a>, or read <a href="/.well-known/agent.json">discovery metadata</a>.</p>
+      <p><small>This is an independent, self-hosted fork of <a href="https://github.com/EveryInc/proof-sdk">Proof SDK</a> that adds voice editing. It is not the hosted Proof service and is not affiliated with or endorsed by Every.</small></p>
     </main>
   </body>
 </html>`);
@@ -120,6 +126,7 @@ async function main(): Promise<void> {
   });
 
   app.use(discoveryRoutes);
+  app.use('/api', liveRoutes);
   app.use('/api', enforceApiClientCompatibility, apiRoutes);
   app.use('/api/agent', agentRoutes);
   app.use(apiRoutes);

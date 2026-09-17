@@ -145,6 +145,7 @@ import { syncAgentSessions } from '../analytics/agent-sessions';
 import { initThemePicker, getThemePicker } from '../ui/theme-picker';
 import { fileClient } from '../bridge/file-client';
 import { shareClient, type CollabSessionInfo, type SharePendingEvent } from '../bridge/share-client';
+import { VoicePanel } from '../voice/panel';
 import { collabClient, type CollabSyncStatus } from '../bridge/collab-client';
 import { shouldDeferShareMarksRefresh } from './share-marks-refresh';
 import { collabCursorBuilder, collabSelectionBuilder } from './plugins/collab-cursors';
@@ -740,6 +741,7 @@ export interface ProofEditor {
   insertAt(offset: number, text: string, author?: string): void;
   insertAtCursor(text: string, author?: string): void;
   replaceSelection(text: string, author?: string): void;
+  getSelectionContext(): { text: string; block: string; from: number; to: number } | null;
   replaceRange(from: number, to: number, text: string, author?: string): void;
 
   // Agent cursor methods (for AI agent navigation)
@@ -6100,6 +6102,23 @@ class ProofEditorImpl implements ProofEditor {
     });
   }
 
+  // Selected text plus the text of the block(s) it sits in. Used by the voice
+  // agent so "reword this" can resolve without the author reading anything aloud.
+  getSelectionContext(): { text: string; block: string; from: number; to: number } | null {
+    if (!this.editor) return null;
+    const view = this.editor.ctx.get(editorViewCtx);
+    const { from, to, $from, $to } = view.state.selection;
+    const doc = view.state.doc;
+    const blockFrom = $from.depth > 0 ? $from.start(1) : from;
+    const blockTo = $to.depth > 0 ? $to.end(1) : to;
+    return {
+      text: doc.textBetween(from, to, '\n'),
+      block: doc.textBetween(blockFrom, blockTo, '\n'),
+      from,
+      to,
+    };
+  }
+
   /**
    * Replace the current selection with new text
    * @param text - Replacement text
@@ -8480,41 +8499,12 @@ class ProofEditorImpl implements ProofEditor {
       return false;
     }
 
-    if (this.isShareMode) {
-      let canAccept = false;
-      this.editor.action((ctx) => {
-        const view = ctx.get(editorViewCtx);
-        canAccept = getPendingSuggestions(getMarks(view.state)).some((mark) => mark.id === markId);
-      });
-      if (!canAccept) {
-        console.warn('[markAccept] Suggestion not pending in share mode:', markId);
-        return false;
-      }
-
-      const actor = getCurrentActor();
-      void shareClient.acceptSuggestion(markId, actor).then((result) => {
-        if (!result || 'error' in result || result.success !== true) return;
-        const serverMarks = (result.marks && typeof result.marks === 'object' && !Array.isArray(result.marks))
-          ? result.marks as Record<string, StoredMark>
-          : null;
-        if (!serverMarks) return;
-        this.lastReceivedServerMarks = { ...serverMarks };
-        this.initialMarksSynced = true;
-        if (this.editor) {
-          this.editor.action((innerCtx) => {
-            const innerView = innerCtx.get(editorViewCtx);
-            applyRemoteMarks(innerView, serverMarks, { hydrateAnchors: this.collabCanEdit });
-            const stats = getAuthorshipStats(innerView);
-            this.bridge.authorshipStatsUpdated(stats);
-          });
-        }
-        captureEvent('suggestion_accepted', { count: 1 });
-      }).catch((error) => {
-        console.error('[markAccept] Failed to persist suggestion acceptance via share mutation:', error);
-      });
-      return true;
-    }
-
+    // Accept is applied in the editor and reaches the server through the normal
+    // Yjs sync, the same way typing does. The previous share-mode path asked the
+    // server to apply the accept to its canonical copy while this browser still
+    // held the live document; the two then merged into duplicated text and the
+    // suggestion stayed pending. A follow-up server-side accept is skipped for
+    // the same reason: it races the sync and can apply the replacement twice.
     let success = false;
     this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx);
@@ -8525,26 +8515,6 @@ class ProofEditorImpl implements ProofEditor {
         const metadata = getMarkMetadataWithQuotes(view.state);
         this.lastReceivedServerMarks = { ...metadata };
         this.initialMarksSynced = true;
-
-        const actor = getCurrentActor();
-        void shareClient.acceptSuggestion(markId, actor).then((result) => {
-          if (!result || 'error' in result || result.success !== true) return;
-          const serverMarks = (result.marks && typeof result.marks === 'object' && !Array.isArray(result.marks))
-            ? result.marks as Record<string, StoredMark>
-            : null;
-          if (!serverMarks) return;
-          this.lastReceivedServerMarks = { ...serverMarks };
-          this.initialMarksSynced = true;
-          if (this.editor) {
-            this.editor.action((innerCtx) => {
-              const innerView = innerCtx.get(editorViewCtx);
-              const mergedMetadata = mergePendingServerMarks(getMarkMetadataWithQuotes(innerView.state), serverMarks);
-              setMarkMetadata(innerView, mergedMetadata);
-            });
-          }
-        }).catch((error) => {
-          console.error('[markAccept] Failed to persist suggestion acceptance via share mutation:', error);
-        });
       }
       if (success) {
         captureEvent('suggestion_accepted', { count: 1 });
@@ -10299,6 +10269,19 @@ if (window.location?.pathname?.startsWith('/d/')) {
       }
     },
   };
+}
+
+// Voice editing (Gemini Live). Shared documents only, since minting a voice
+// session requires the document's edit token.
+if (window.location?.pathname?.startsWith('/d/')) {
+  void new VoicePanel({
+    getSlug: () => shareClient.getSlug(),
+    getShareToken: () => shareClient.getShareToken(),
+    getAuthorActor: () => getCurrentActor(),
+    editor: window.proof,
+  })
+    .mount()
+    .catch((error) => console.warn('[voice] panel failed to mount', error));
 }
 
 // Expose freeform prompt for sidebar

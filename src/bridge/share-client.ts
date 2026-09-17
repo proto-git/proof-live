@@ -247,6 +247,10 @@ export class ShareClient {
     return this.slug !== null;
   }
 
+  getShareToken(): string | null {
+    return this.shareToken;
+  }
+
   getSlug(): string | null {
     return this.slug;
   }
