@@ -166,9 +166,10 @@
       width: 100%;
     }
 
+    /* The bottom padding lets the last lines scroll clear of the voice dock and its caption. */
     #editor {
       background: var(--bg-color);
-      padding: 60px 40px 40px;
+      padding: 60px 40px 176px;
       padding-left: calc(var(--provenance-bar-width) + 20px);
       min-height: 100vh;
       outline: none;
@@ -183,13 +184,21 @@
     /* Wide screens: a centred reading column, with room on its left for the authorship bar */
     @media (min-width: 900px) {
       #editor-container {
-        max-width: 860px;
+        max-width: 800px;
       }
       #editor {
-        padding: 104px 56px 120px;
+        padding: 104px 56px 176px;
       }
       #provenance-gutter {
         width: 4px;
+      }
+    }
+
+    /* Narrow screens: the Documents and Changes pills sit on a row under the
+       header pill, so the text starts below both. */
+    @media (max-width: 899px) {
+      #editor-container {
+        padding-top: 28px;
       }
     }
 
@@ -802,6 +811,15 @@
       font-weight: var(--heading-weight);
       text-align: var(--heading-align);
     }
+    :root:not([data-theme="whitey"]) .milkdown h1 {
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+    }
+    .milkdown h2,
+    .milkdown h3 {
+      margin-top: 1.6em;
+      line-height: 1.3;
+    }
     .milkdown h2 {
       font-size: 1.5em;
       margin-bottom: 0.5em;
@@ -844,6 +862,42 @@
       background: none;
       padding: 0;
       color: inherit;
+    }
+    /* Tables had no styles at all, so cells ran into each other. */
+    .milkdown table {
+      border-collapse: collapse;
+      margin-bottom: 1em;
+      font-size: 0.95em;
+    }
+    .milkdown th,
+    .milkdown td {
+      padding: 8px 20px 8px 0;
+      border-bottom: 1px solid color-mix(in srgb, var(--text-color) 12%, var(--bg-color));
+      text-align: left;
+      vertical-align: top;
+    }
+    .milkdown th {
+      font-weight: 600;
+      border-bottom-color: color-mix(in srgb, var(--text-color) 35%, var(--bg-color));
+    }
+    .milkdown th p,
+    .milkdown td p {
+      margin: 0;
+    }
+    /* YAML front matter is metadata, not the document's opening: keep it quiet
+       instead of a black slab above the title. */
+    .milkdown pre[data-frontmatter="true"] {
+      background: var(--pl-paper);
+      color: var(--pl-text-muted);
+      border: 1px solid var(--pl-line);
+      border-radius: var(--pl-radius-control);
+      padding: 10px 14px;
+      margin-bottom: 2em;
+      font-size: 0.78em;
+      line-height: 1.55;
+    }
+    .milkdown pre[data-frontmatter="true"].ProseMirror-selectednode {
+      background: var(--pl-paper) !important;
     }
     .proof-code-block {
       margin-bottom: 1em;
