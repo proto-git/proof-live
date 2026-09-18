@@ -149,7 +149,7 @@ const STYLE = `
 @media (prefers-reduced-motion: reduce) { .changes-body { scroll-behavior: auto; } }
 /* Narrow screens: the header pill fills the width, so sit on the row below it. */
 @media (max-width: 899px) {
-  .changes-toggle { top: 76px; right: 12px; height: 36px; padding: 0 12px; }
+  .changes-toggle { top: 88px; right: 12px; height: 36px; padding: 0 12px; }
 }
 @media (max-width: 720px) {
   .changes-head { flex-wrap: wrap; }

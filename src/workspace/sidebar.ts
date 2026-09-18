@@ -255,7 +255,7 @@ const STYLE = `
   .workspace-sidebar { box-shadow: 0 12px 40px rgba(12, 14, 20, 0.25); }
   /* The header pill fills a narrow screen, so the toggle sits on a row below it
      instead of on top of the document's title. */
-  .workspace-toggle { top: 76px; left: 12px; height: 36px; padding: 0 12px; }
+  .workspace-toggle { top: 88px; left: 12px; height: 36px; padding: 0 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .workspace-sidebar, body, #share-banner, .voice-dock { transition: none !important; }
