@@ -52,7 +52,9 @@ function lcsOps<T>(a: T[], b: T[], equal: (x: T, y: T) => boolean): Array<{ op: 
  */
 export function stripProofSpans(markdown: string): string {
   return markdown
-    .replace(/<!--\s*PROOF\b[\s\S]*?-->/g, '')
+    // To the end of the text, not to the next "-->": the block quotes the document,
+    // and a Mermaid arrow inside a quote would close the comment early.
+    .replace(/<!--\s*PROOF\b[\s\S]*$/, '')
     .replace(/^(\s*(?:```+|~~~+)\S*) proof:\S+$/gm, '$1')
     .replace(/<span\b[^>]*\bdata-proof=[^>]*>/g, '')
     .replace(/<\/span>/g, '');

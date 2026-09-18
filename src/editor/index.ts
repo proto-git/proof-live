@@ -148,6 +148,7 @@ import { shareClient, type CollabSessionInfo, type SharePendingEvent } from '../
 import { VoicePanel } from '../voice/panel';
 import { WorkspaceSidebar } from '../workspace/sidebar';
 import { ChangesView } from '../changes/view';
+import { downloadMarkdown, exportFilename, toCleanMarkdown } from '../export/clean-markdown';
 import { collabClient, type CollabSyncStatus } from '../bridge/collab-client';
 import { shouldDeferShareMarksRefresh } from './share-marks-refresh';
 import { collabCursorBuilder, collabSelectionBuilder } from './plugins/collab-cursors';
@@ -4145,6 +4146,11 @@ class ProofEditorImpl implements ProofEditor {
       };
 
       addItem('Copy link', async () => this.copyLinkWithFallback(this.getCanonicalShareUrl()));
+      addDivider();
+      // The final draft: prose only, without suggestions, authorship, or review metadata.
+      const finalDraft = () => toCleanMarkdown(this.getMarkdownSnapshot()?.content ?? '', window.location.origin);
+      addActionItem('Download Markdown', () => downloadMarkdown(exportFilename(this.shareDocTitle), finalDraft()));
+      addItem('Copy Markdown', async () => this.copyTextToClipboard(finalDraft()));
       addDivider();
       addActionItem('View activity', () => this.openShareActivityModal());
 
