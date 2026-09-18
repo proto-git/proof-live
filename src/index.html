@@ -23,8 +23,9 @@
       --a2-color: rgba(255, 255, 100, 0.25);
       --a3-color: rgba(100, 255, 100, 0.25);
       --a4-color: rgba(100, 200, 255, 0.25);
-      --human-color: #6EE7B7;
-      --ai-color: #A5B4FC;
+      /* Authorship: blue for the person, orange for the agent (see --pl-* below) */
+      --human-color: #2346C7;
+      --ai-color: #E8590C;
       --mixed-color: #9C27B0;
       --provenance-gutter-width: 60px;
       --provenance-bar-width: 6px;
@@ -327,9 +328,69 @@
       box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.26);
     }
 
+    /* Wide screens: the review sheet is a card over the document, clear of the
+       workspace sidebar and above the voice dock, instead of a full-width slab
+       that slides under both. */
+    @media (min-width: 900px) {
+      .mark-popover.mark-popover-sheet {
+        left: 50% !important;
+        right: auto !important;
+        bottom: 92px !important;
+        width: min(560px, calc(100vw - 48px));
+        transform: translateX(-50%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: var(--pl-radius-card);
+        padding: 14px 16px;
+        box-shadow: var(--pl-shadow-float);
+        font-size: 14px;
+      }
+      .workspace-open .mark-popover.mark-popover-sheet {
+        margin-left: 136px;
+        width: min(560px, calc(100vw - 272px - 48px));
+      }
+      .mark-popover.mark-popover-sheet .mark-popover-actions {
+        position: static;
+        background: none;
+      }
+    }
+
     .mark-popover-header {
       font-weight: 600;
       margin-bottom: 8px;
+    }
+
+    /* Who proposed a suggestion: a dot and a name in the authorship colours,
+       and the same colour down the card's left edge. */
+    .mark-popover-header[data-author] {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      --author: var(--pl-human-on-ink);
+    }
+    .mark-popover-header[data-author="agent"] {
+      --author: var(--pl-agent-on-ink);
+    }
+    .mark-popover-author {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--author);
+    }
+    .mark-popover-author::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--author);
+    }
+    .mark-popover:has(.mark-popover-header[data-author="agent"]) {
+      border-left: 3px solid var(--pl-agent-on-ink);
+    }
+    .mark-popover:has(.mark-popover-header[data-author="human"]) {
+      border-left: 3px solid var(--pl-human-on-ink);
     }
 
     .mark-popover-thread {

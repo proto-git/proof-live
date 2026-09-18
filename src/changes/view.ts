@@ -50,7 +50,8 @@ const STYLE = `
   text-align: center;
   font-variant-numeric: tabular-nums;
 }
-.changes-toggle[data-dirty="true"] .changes-count { background: var(--ai-color, #A5B4FC); color: #1e1b4b; }
+/* Ink, not an authorship colour: the count covers the author's edits and the agent's. */
+.changes-toggle[data-dirty="true"] .changes-count { background: var(--pl-ink, #15171C); color: var(--pl-text-on-ink, #F4F5F7); }
 
 .changes-backdrop {
   position: fixed;

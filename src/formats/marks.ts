@@ -22,15 +22,16 @@
  */
 const KNOWN_COLORS: Record<string, string> = {
   // Origin/authorship
-  human: '#6EE7B7',  // Soft mint
-  ai: '#A5B4FC',     // Soft lavender
+  // Keep in step with --pl-human and --pl-agent-signal in index.html.
+  human: '#2346C7',  // Ink blue
+  ai: '#E8590C',     // Signal orange
   system: '#93C5FD', // Soft sky blue
 
   // Mark kinds (for future use in sidebar counts)
   approved: '#2DD4BF',   // Teal (distinct from human)
   flagged: '#FCA5A5',    // Dusty rose
   comment: '#FCD34D',    // Soft gold
-  insert: '#6EE7B7',     // Soft mint (same as human)
+  insert: '#22C55E',     // Green, as the inline suggestion (no longer the human colour)
   delete: '#FCA5A5',     // Dusty rose (same as flagged)
   replace: '#FCD34D',    // Soft gold (same as comment)
 };
