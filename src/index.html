@@ -119,6 +119,19 @@
       padding-left: calc(var(--provenance-bar-width) + 80px);
     }
 
+    /* Wide screens: a centred reading column, with room on its left for the authorship bar */
+    @media (min-width: 900px) {
+      #editor-container {
+        max-width: 860px;
+      }
+      #editor {
+        padding: 104px 56px 120px;
+      }
+      #provenance-gutter {
+        width: 4px;
+      }
+    }
+
     /* Milkdown editor styles */
     .milkdown {
       outline: none;

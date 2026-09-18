@@ -50,6 +50,7 @@ type ResolvedMarkRange = {
 };
 
 const DEFAULT_GUTTER_COLOR = '#E5E7EB';
+const GUTTER_TEXT_GAP_PX = 24;
 
 /**
  * Gutter status - determines final color
@@ -121,7 +122,6 @@ function blockIntersectsMark(blockFrom: number, blockTo: number, mark: ResolvedM
 function getAuthoredBlockColor(
   blockFrom: number,
   blockTo: number,
-  blockTextLength: number,
   marksByKind: Map<MarkKind, ResolvedMarkRange[]>
 ): string | null {
   const authored = marksByKind.get('authored') ?? [];
@@ -143,12 +143,14 @@ function getAuthoredBlockColor(
     }
   }
 
-  const unmarked = Math.max(0, blockTextLength - (human + ai + system));
-  ai += unmarked;
-
+  // Text without an authored mark (imported or seeded content) stays neutral, so the
+  // gutter shows where someone has actually been rather than painting everything as AI.
   if (system > 0) return getMarkColor('system');
   if (human === 0 && ai === 0) return null;
-  return ai >= human ? getMarkColor('ai') : getMarkColor('human');
+  if (human > 0 && ai > 0) {
+    return `linear-gradient(to right, ${getMarkColor('human')} 50%, ${getMarkColor('ai')} 50%)`;
+  }
+  return ai > 0 ? getMarkColor('ai') : getMarkColor('human');
 }
 
 /**
@@ -193,7 +195,6 @@ function getBlockStatus(
  * - Comment (soft gold) - has discussion, overrides authorship
  */
 function getBlockColor(
-  doc: ProseMirrorNode,
   blockFrom: number,
   blockTo: number,
   marksByKind: Map<MarkKind, ResolvedMarkRange[]>
@@ -209,8 +210,7 @@ function getBlockColor(
   }
 
   // Normal status - show authorship color
-  const blockTextLength = doc.textBetween(blockFrom, blockTo, '\n', '\n').length;
-  const authoredColor = getAuthoredBlockColor(blockFrom, blockTo, blockTextLength, marksByKind);
+  const authoredColor = getAuthoredBlockColor(blockFrom, blockTo, marksByKind);
   if (authoredColor) return authoredColor;
 
   return DEFAULT_GUTTER_COLOR;
@@ -306,7 +306,7 @@ function calculateSegments(
   if (mode === 'hidden') return [];
 
   const resolveColor = (from: number, to: number) => (
-    getBlockColor(view.state.doc, from, to, marksByKind)
+    getBlockColor(from, to, marksByKind)
   );
 
   const blocks = collectBlocks(view.state.doc, resolveColor);
@@ -345,7 +345,7 @@ function calculateViewportSegments(
   if (mode === 'hidden') return [];
 
   const resolveColor = (from: number, to: number) => (
-    getBlockColor(view.state.doc, from, to, marksByKind)
+    getBlockColor(from, to, marksByKind)
   );
 
   const blocks = collectBlocks(view.state.doc, resolveColor);
@@ -391,7 +391,7 @@ function buildViewportGutterDOM(gutterEl: HTMLElement, segments: ViewportSegment
     div.style.left = '0px';
     div.style.right = '0px';
     div.style.height = `${Math.min(viewportHeight, firstSeg.top)}px`;
-    div.style.backgroundColor = firstSeg.color;
+    div.style.background = firstSeg.color;
     gutterEl.appendChild(div);
   }
 
@@ -410,7 +410,7 @@ function buildViewportGutterDOM(gutterEl: HTMLElement, segments: ViewportSegment
     div.style.left = '0px';
     div.style.right = '0px';
     div.style.height = `${Math.max(1, Math.min(viewportHeight, segBottom) - segTop)}px`;
-    div.style.backgroundColor = seg.color;
+    div.style.background = seg.color;
     gutterEl.appendChild(div);
   }
 
@@ -424,7 +424,7 @@ function buildViewportGutterDOM(gutterEl: HTMLElement, segments: ViewportSegment
     div.style.left = '0px';
     div.style.right = '0px';
     div.style.height = `${Math.max(1, viewportHeight - Math.max(0, lastBottom))}px`;
-    div.style.backgroundColor = lastSeg.color;
+    div.style.background = lastSeg.color;
     gutterEl.appendChild(div);
   }
 }
@@ -451,7 +451,7 @@ function buildGutterDOM(gutterEl: HTMLElement, segments: CachedSegment[]): void 
     div.style.left = '0px';
     div.style.right = '0px';
     div.style.height = `${firstSeg.docTop}px`;
-    div.style.backgroundColor = firstSeg.color;
+    div.style.background = firstSeg.color;
     gutterEl.appendChild(div);
   }
 
@@ -471,7 +471,7 @@ function buildGutterDOM(gutterEl: HTMLElement, segments: CachedSegment[]): void 
     div.style.left = '0px';
     div.style.right = '0px';
     div.style.height = `${Math.max(1, segBottom - seg.docTop)}px`;
-    div.style.backgroundColor = seg.color;
+    div.style.background = seg.color;
     gutterEl.appendChild(div);
   }
 }
@@ -595,6 +595,8 @@ export const heatmapPlugin = $prose((ctx) => {
 
         syncGutterViewportFrame(gutterEl, false);
         const editorRect = editorView.dom.getBoundingClientRect();
+        // Sit just left of the text column; the page edge can be covered by the workspace sidebar.
+        gutterEl.style.left = `${Math.max(0, editorRect.left - GUTTER_TEXT_GAP_PX)}px`;
         const scrollOffset = -editorRect.top;
         updateGutterScroll(innerContainer, scrollOffset);
       };
@@ -626,6 +628,7 @@ export const heatmapPlugin = $prose((ctx) => {
       // Scroll polling (desktop: fast transform updates; mobile: direct viewport re-render)
       let scrollPollId: number | null = null;
       let lastEditorTop: number | null = null;
+      let lastEditorLeft: number | null = null;
       let lastViewportOffsetTop: number | null = null;
       let lastViewportHeight: number | null = null;
 
@@ -647,11 +650,15 @@ export const heatmapPlugin = $prose((ctx) => {
           ) {
             scheduleRender(true);
           }
-        } else if (lastEditorTop !== null && Math.abs(currentTop - lastEditorTop) > 0.5) {
+        } else if (
+          (lastEditorTop !== null && Math.abs(currentTop - lastEditorTop) > 0.5)
+          || (lastEditorLeft !== null && Math.abs(editorRect.left - lastEditorLeft) > 0.5)
+        ) {
           updateScroll();
         }
 
         lastEditorTop = currentTop;
+        lastEditorLeft = editorRect.left;
         lastViewportOffsetTop = currentViewportOffsetTop;
         lastViewportHeight = currentViewportHeight;
         scrollPollId = requestAnimationFrame(pollScroll);

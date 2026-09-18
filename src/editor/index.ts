@@ -147,6 +147,7 @@ import { fileClient } from '../bridge/file-client';
 import { shareClient, type CollabSessionInfo, type SharePendingEvent } from '../bridge/share-client';
 import { VoicePanel } from '../voice/panel';
 import { WorkspaceSidebar } from '../workspace/sidebar';
+import { ChangesView } from '../changes/view';
 import { collabClient, type CollabSyncStatus } from '../bridge/collab-client';
 import { shouldDeferShareMarksRefresh } from './share-marks-refresh';
 import { collabCursorBuilder, collabSelectionBuilder } from './plugins/collab-cursors';
@@ -10305,6 +10306,15 @@ function mountWorkspaceSidebar(): void {
     .catch((error) => console.warn('[workspace] sidebar failed to mount', error));
 }
 
+// Before/after view of what changed since the document was opened in this tab.
+function mountChangesView(): void {
+  if (!window.location?.pathname?.startsWith('/d/')) return;
+  new ChangesView({
+    getSlug: () => shareClient.getSlug(),
+    getMarkdown: () => window.proof.getMarkdownSnapshot()?.content ?? '',
+  }).mount();
+}
+
 // Expose freeform prompt for sidebar
 (window as any).sendAgentPrompt = (prompt: string) => {
   // Refresh document content before triggering so the agent sees current state
@@ -10362,6 +10372,7 @@ if (document.readyState === 'loading') {
     void window.proof.init().then(() => {
       mountVoicePanel();
       mountWorkspaceSidebar();
+      mountChangesView();
     });
   });
 } else {
@@ -10369,6 +10380,7 @@ if (document.readyState === 'loading') {
   void window.proof.init().then(() => {
     mountVoicePanel();
     mountWorkspaceSidebar();
+    mountChangesView();
   });
 }
 
