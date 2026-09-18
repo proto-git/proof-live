@@ -93,6 +93,7 @@ function createHarness(options?: { autoMic?: boolean }): Harness {
       enqueue: () => undefined,
       flush: () => undefined,
       close: async () => undefined,
+      getLevel: () => 0,
     }),
     openSocket: async (_grant, callbacks) => {
       const socket: FakeSocket = {

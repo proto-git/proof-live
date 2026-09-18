@@ -307,6 +307,10 @@ export class VoicePanel {
       },
     });
 
+    // Orange bars follow the agent's measured loudness.
+    const session = this.session;
+    this.tape.setAgentLevelSource(() => session.getAgentLevel());
+
     // start() reports failures through onState; swallow the rejection so the
     // page-level unhandled rejection banner does not fire as well.
     await this.session.start().catch(() => undefined);

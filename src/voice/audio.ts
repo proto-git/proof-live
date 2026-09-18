@@ -156,6 +156,10 @@ export class PcmPlayer {
   private nextStartTime = 0;
   private sources = new Set<AudioBufferSourceNode>();
   private onSpeakingChange: ((speaking: boolean) => void) | null = null;
+  // A pass-through tap for the dock's level display. Playback never depends on
+  // it: if it cannot be made, sources go straight to the destination as before.
+  private analyser: AnalyserNode | null = null;
+  private levelScratch: Float32Array<ArrayBuffer> | null = null;
 
   constructor(onSpeakingChange?: (speaking: boolean) => void) {
     this.onSpeakingChange = onSpeakingChange ?? null;
@@ -163,8 +167,35 @@ export class PcmPlayer {
 
   // Must be called from a user gesture so autoplay policy lets audio through.
   async resume(): Promise<void> {
-    if (!this.context) this.context = new AudioContext({ sampleRate: OUTPUT_SAMPLE_RATE });
+    if (!this.context) {
+      this.context = new AudioContext({ sampleRate: OUTPUT_SAMPLE_RATE });
+      try {
+        const analyser = this.context.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.connect(this.context.destination);
+        this.analyser = analyser;
+        this.levelScratch = new Float32Array(analyser.fftSize);
+      } catch {
+        this.analyser = null;
+        this.levelScratch = null;
+      }
+    }
     if (this.context.state === 'suspended') await this.context.resume();
+  }
+
+  // RMS (0..1) of what is audible right now, for display only. It reads the
+  // playing signal, so it stays in step with the sound and drops to zero the
+  // moment flush() cuts the agent off.
+  getLevel(): number {
+    if (!this.analyser || !this.levelScratch || this.sources.size === 0) return 0;
+    try {
+      this.analyser.getFloatTimeDomainData(this.levelScratch);
+      let sumSquares = 0;
+      for (let i = 0; i < this.levelScratch.length; i++) sumSquares += this.levelScratch[i] * this.levelScratch[i];
+      return Math.sqrt(sumSquares / this.levelScratch.length);
+    } catch {
+      return 0;
+    }
   }
 
   enqueue(base64Pcm: string): void {
@@ -180,7 +211,7 @@ export class PcmPlayer {
 
     const source = this.context.createBufferSource();
     source.buffer = buffer;
-    source.connect(this.context.destination);
+    source.connect(this.analyser ?? this.context.destination);
 
     // A small lead on the first chunk absorbs network jitter; later chunks
     // butt up against the previous one for gapless speech.
@@ -218,5 +249,7 @@ export class PcmPlayer {
     this.flush();
     if (this.context && this.context.state !== 'closed') await this.context.close();
     this.context = null;
+    this.analyser = null;
+    this.levelScratch = null;
   }
 }
