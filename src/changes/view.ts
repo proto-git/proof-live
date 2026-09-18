@@ -16,6 +16,11 @@ const COLLAPSE_AFTER = 2;
 const ICON =
   '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4H5v16h3M16 4h3v16h-3M12 3v18"/></svg>';
 
+const STEP_UP_ICON =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>';
+const STEP_DOWN_ICON =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+
 const STYLE = `
 .changes-toggle {
   all: unset;
@@ -30,21 +35,21 @@ const STYLE = `
   height: 40px;
   padding: 0 14px;
   border-radius: 999px;
-  background: #fff;
-  color: #374151;
-  font: 500 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--pl-paper-raised, #fff);
+  color: var(--pl-text, #1B1D22);
+  font: 500 13px/1 var(--pl-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
   box-shadow: 0 4px 18px rgba(12, 14, 20, 0.1), 0 0 0 1px rgba(12, 14, 20, 0.06);
   cursor: pointer;
   transition: background 120ms ease;
 }
-.changes-toggle:hover { background: #f6f7f9; }
-.changes-toggle:focus-visible, .changes-dialog button:focus-visible { outline: 2px solid #4f7cff; outline-offset: 2px; }
+.changes-toggle:hover { background: var(--pl-paper, #F7F6F3); }
+.changes-toggle:focus-visible, .changes-dialog button:focus-visible { outline: 2px solid var(--pl-focus, #2346C7); outline-offset: 2px; }
 .changes-count {
   min-width: 20px;
   padding: 3px 6px;
   border-radius: 999px;
-  background: #eef0f4;
-  color: #4b5563;
+  background: var(--pl-paper, #F7F6F3);
+  color: var(--pl-text-muted, #5C6370);
   font-size: 11px;
   font-weight: 600;
   text-align: center;
@@ -61,8 +66,8 @@ const STYLE = `
   align-items: center;
   justify-content: center;
   padding: 32px;
-  background: rgba(12, 14, 20, 0.45);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: rgba(21, 23, 28, 0.45);
+  font-family: var(--pl-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
 }
 .changes-backdrop[hidden] { display: none; }
 .changes-dialog {
@@ -70,9 +75,9 @@ const STYLE = `
   flex-direction: column;
   width: min(1180px, 100%);
   max-height: 100%;
-  border-radius: 16px;
-  background: #fff;
-  color: #111827;
+  border-radius: var(--pl-radius-card, 14px);
+  background: var(--pl-paper-raised, #fff);
+  color: var(--pl-text, #1B1D22);
   box-shadow: 0 24px 80px rgba(12, 14, 20, 0.35);
   overflow: hidden;
 }
@@ -83,35 +88,45 @@ const STYLE = `
   padding: 16px 20px;
   border-bottom: 1px solid rgba(12, 14, 20, 0.08);
 }
-.changes-title { font-size: 15px; font-weight: 600; }
-.changes-sub { margin-top: 3px; font-size: 12px; color: #6b7280; }
+.changes-title { font-size: 17px; font-weight: 700; }
+.changes-sub { margin-top: 3px; font-size: 13px; color: var(--pl-text-muted, #5C6370); }
 .changes-head-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .changes-btn {
   all: unset;
   box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 32px;
   padding: 0 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  color: #374151;
-  box-shadow: 0 0 0 1px rgba(12, 14, 20, 0.12);
+  border-radius: var(--pl-radius-control, 9px);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pl-text, #1B1D22);
+  box-shadow: inset 0 0 0 1px var(--pl-line-strong, rgba(21, 23, 28, 0.18));
   cursor: pointer;
 }
-.changes-btn:hover { background: #f6f7f9; }
+.changes-btn:hover { background: var(--pl-paper, #F7F6F3); }
+.changes-btn[data-primary] { background: var(--pl-ink, #15171C); color: var(--pl-text-on-ink, #F4F5F7); box-shadow: none; }
+.changes-btn[data-primary]:hover { background: var(--pl-ink-raised, #23262E); }
+.changes-btn[disabled] { opacity: 0.4; cursor: default; }
+/* Step through the changed blocks, one at a time. */
+.changes-step { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; }
+.changes-step[hidden] { display: none; }
+.changes-step .changes-btn { width: 32px; padding: 0; }
+.changes-step-label { min-width: 52px; text-align: center; font-size: 13px; color: var(--pl-text-muted, #5C6370); font-variant-numeric: tabular-nums; }
 .changes-cols, .changes-row { display: grid; grid-template-columns: 1fr 1fr; }
 .changes-row + .changes-row { margin-top: 4px; }
 .changes-cols {
-  padding: 8px 20px;
-  font-size: 11px;
+  padding: 8px 20px 8px 35px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #6b7280;
-  background: #fbfbfa;
-  border-bottom: 1px solid rgba(12, 14, 20, 0.08);
+  color: var(--pl-text-muted, #5C6370);
+  background: var(--pl-paper, #F7F6F3);
+  border-bottom: 1px solid var(--pl-line, rgba(21, 23, 28, 0.1));
 }
-.changes-body { overflow: auto; padding: 8px 20px 20px; }
+.changes-cols > * + * { padding-left: 12px; }
+.changes-body { overflow: auto; padding: 8px 20px 20px; scroll-behavior: smooth; }
 .changes-cell {
   min-width: 0;
   padding: 8px 12px;
@@ -121,16 +136,23 @@ const STYLE = `
   border-left: 3px solid transparent;
 }
 .changes-cell + .changes-cell { margin-left: 12px; }
-.changes-row[data-kind="same"] .changes-cell { color: #9ca3af; }
-.changes-cell[data-side="before"][data-tone="removed"] { background: #fef2f2; border-left-color: #fca5a5; }
-.changes-cell[data-side="after"][data-tone="added"] { background: #f0fdf4; border-left-color: #6ee7b7; }
+.changes-row[data-kind="same"] .changes-cell { color: #6b7280; }
+.changes-row[data-current="true"] .changes-cell { box-shadow: 0 0 0 2px var(--pl-text, #1B1D22); border-radius: 3px; }
+/* Red and green say what kind of change it is, as they do in the document. */
+.changes-cell[data-side="before"][data-tone="removed"] { background: #fef2f2; border-left-color: var(--pl-delete, #B42318); }
+.changes-cell[data-side="after"][data-tone="added"] { background: #f0fdf4; border-left-color: var(--pl-insert, #15803D); }
 .changes-cell[data-tone="empty"] { background: repeating-linear-gradient(135deg, #fafafa 0 6px, #f3f4f6 6px 12px); }
 .changes-cell del { background: #fecaca; color: #7f1d1d; text-decoration: line-through; text-decoration-color: rgba(127, 29, 29, 0.5); border-radius: 2px; }
 .changes-cell ins { background: #a7f3d0; color: #064e3b; text-decoration: none; border-radius: 2px; }
-.changes-skip { grid-column: 1 / -1; padding: 6px 12px; font-size: 12px; color: #9ca3af; text-align: center; }
-.changes-empty { padding: 56px 20px; text-align: center; color: #6b7280; font-size: 14px; }
+.changes-skip { grid-column: 1 / -1; padding: 6px 12px; font-size: 12px; color: var(--pl-text-muted, #5C6370); text-align: center; }
+.changes-empty { padding: 56px 20px; text-align: center; color: var(--pl-text-muted, #5C6370); font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { .changes-body { scroll-behavior: auto; } }
+/* Narrow screens: the header pill fills the width, so sit on the row below it. */
+@media (max-width: 899px) {
+  .changes-toggle { top: 76px; right: 12px; height: 36px; padding: 0 12px; }
+}
 @media (max-width: 720px) {
-  .changes-toggle .changes-label { display: none; }
+  .changes-head { flex-wrap: wrap; }
   .changes-backdrop { padding: 0; }
   .changes-dialog { border-radius: 0; height: 100%; }
 }
@@ -150,6 +172,10 @@ export class ChangesView {
   private readonly backdrop = el('div', 'changes-backdrop');
   private readonly body = el('div', 'changes-body');
   private readonly sub = el('div', 'changes-sub');
+  private readonly stepper = el('div', 'changes-step');
+  private readonly stepLabel = el('span', 'changes-step-label');
+  private changedRows: HTMLElement[] = [];
+  private stepIndex = -1;
   private baseline: string | null = null;
   private lastAfter = '';
   private stale = true;
@@ -185,8 +211,23 @@ export class ChangesView {
     });
     const close = el('button', 'changes-btn', 'Close');
     close.type = 'button';
+    close.dataset.primary = '';
     close.addEventListener('click', () => this.close());
-    actions.append(reset, close);
+
+    const previous = el('button', 'changes-btn');
+    previous.type = 'button';
+    previous.innerHTML = STEP_UP_ICON;
+    previous.setAttribute('aria-label', 'Previous change');
+    previous.addEventListener('click', () => this.step(-1));
+    const next = el('button', 'changes-btn');
+    next.type = 'button';
+    next.innerHTML = STEP_DOWN_ICON;
+    next.setAttribute('aria-label', 'Next change');
+    next.addEventListener('click', () => this.step(1));
+    this.stepper.append(previous, this.stepLabel, next);
+    this.stepper.hidden = true;
+
+    actions.append(this.stepper, reset, close);
     head.append(titles, actions);
     const cols = el('div', 'changes-cols');
     cols.append(el('div', undefined, 'Before'), el('div', undefined, 'Now'));
@@ -258,7 +299,19 @@ export class ChangesView {
     this.refresh();
     this.render();
     this.backdrop.hidden = false;
-    (this.backdrop.querySelector('.changes-btn:last-child') as HTMLElement | null)?.focus();
+    (this.backdrop.querySelector('.changes-btn[data-primary]') as HTMLElement | null)?.focus();
+  }
+
+  // Moves a ring to the next or previous changed block and scrolls it into view.
+  private step(direction: 1 | -1): void {
+    if (!this.changedRows.length) return;
+    this.changedRows[this.stepIndex]?.removeAttribute('data-current');
+    const from = this.stepIndex < 0 ? (direction === 1 ? -1 : 0) : this.stepIndex;
+    this.stepIndex = (from + direction + this.changedRows.length) % this.changedRows.length;
+    const row = this.changedRows[this.stepIndex];
+    row.dataset.current = 'true';
+    row.scrollIntoView({ block: 'center' });
+    this.stepLabel.textContent = `${this.stepIndex + 1} of ${this.changedRows.length}`;
   }
 
   private close(): void {
@@ -274,8 +327,13 @@ export class ChangesView {
       summary.added ? `${summary.added} added` : '',
       summary.removed ? `${summary.removed} removed` : '',
     ].filter(Boolean);
-    this.sub.textContent = `Since you opened this document${parts.length ? ` · ${parts.join(' · ')}` : ''}`;
+    this.sub.textContent = parts.length ? `Since you opened this document: ${parts.join(', ')}` : 'Since you opened this document';
     this.body.replaceChildren();
+    this.changedRows = [];
+    this.stepIndex = -1;
+    const total = summary.changed + summary.added + summary.removed;
+    this.stepper.hidden = total < 2;
+    this.stepLabel.textContent = `${total} changes`;
     if (!parts.length) {
       this.body.append(el('div', 'changes-empty', 'Nothing has changed yet. Accepted edits, yours or the agent’s, will show up here.'));
       return;
@@ -308,6 +366,7 @@ export class ChangesView {
   private renderRow(row: BlockRow): HTMLElement {
     const node = el('div', 'changes-row');
     node.dataset.kind = row.kind;
+    if (row.kind !== 'same') this.changedRows.push(node);
     const cell = (side: 'before' | 'after', tone: string, content: string | WordPart[] | null) => {
       const c = el('div', 'changes-cell');
       c.dataset.side = side;
