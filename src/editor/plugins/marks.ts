@@ -2626,12 +2626,19 @@ function applyMarkdownReplace(
     const sameBlock = (node: ProseMirrorNode | null) => Boolean(
       node && original && node.hasMarkup(original.type, original.attrs) && node.textContent === original.textContent
     );
+    // An anchor inside a list (or a quote) cannot take a block beside it without
+    // the block becoming part of that item. New blocks go outside the whole
+    // top-level container instead: after the list, or before it.
+    const $anchor = docBefore.resolve(analysis.parentStart);
+    const nested = $anchor.depth >= 1;
     if (sameBlock(first)) {
       replacement = replacement.cut(first!.nodeSize);
-      replaceFrom = replaceTo;
+      replaceFrom = nested ? $anchor.after(1) : replaceTo;
+      replaceTo = replaceFrom;
     } else if (sameBlock(last)) {
       replacement = replacement.cut(0, replacement.size - last!.nodeSize);
-      replaceTo = replaceFrom;
+      replaceTo = nested ? $anchor.before(1) : replaceFrom;
+      replaceFrom = replaceTo;
     }
   }
 

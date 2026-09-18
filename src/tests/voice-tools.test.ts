@@ -358,6 +358,23 @@ async function run(): Promise<void> {
   await h.runner.run('suggest_replace', { quote: 'Intro.', replacement: 'A better intro.' });
   assertEqual(h.requests[0].body.content, 'A better intro.', 'prose next to a diagram is edited as before');
 
+  // A document that ends in a list: the last item is the only anchor there is.
+  // It is accepted, with the item's own Markdown, so the editor can keep the item
+  // and place the new block below the list.
+  const listDoc = '# Title\n\nIntro.\n\n1. Scan.\n2. **Rewrite.** Keep the meaning.\n';
+  h = createHarness();
+  h.markdown = listDoc;
+  await h.runner.run('suggest_insert', { anchor_quote: '2. Rewrite. Keep the meaning.', content: '## Next\n\nMore.' });
+  assertEqual(
+    [h.requests[0].body.quote, h.requests[0].body.content],
+    ['Rewrite. Keep the meaning.', '**Rewrite.** Keep the meaning.\n\n## Next\n\nMore.'],
+    'a list item anchors a new block, quoted as it reads and rebuilt as it is written',
+  );
+  h = createHarness();
+  h.markdown = listDoc;
+  const wholeList = await h.runner.run('suggest_insert', { anchor_quote: 'Scan. Rewrite. Keep the meaning.', content: '## Next\n\nMore.' });
+  assertEqual([typeof wholeList.error, h.requests.length], ['string', 0], 'a whole list is still not an anchor');
+
   // Images: generated on the server, then proposed like any other block insert.
   h = createHarness();
   const realFetch = (globalThis as any).fetch;
