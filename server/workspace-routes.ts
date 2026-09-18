@@ -11,7 +11,7 @@ import { randomUUID } from 'crypto';
 import { Router, type Request, type Response } from 'express';
 import { canonicalizeStoredMarks } from '../src/formats/marks.js';
 import { ensureCanonicalYjsBaselineForDocument, stripEphemeralCollabSpans } from './collab.js';
-import { createDocument, createDocumentAccessToken, getDocumentBySlug, listActiveDocuments } from './db.js';
+import { createDocument, createDocumentAccessToken, deleteDocument, getDocumentBySlug, listActiveDocuments } from './db.js';
 import { createRateLimiter } from './rate-limiter.js';
 import { generateSlug } from './slug.js';
 import { refreshSnapshotForSlug } from './snapshot.js';
@@ -132,6 +132,21 @@ workspaceRoutes.post('/workspace/documents/:slug/open', writeRateLimiter, (req: 
   }
   const access = createDocumentAccessToken(doc.slug, 'editor');
   res.json({ url: `/d/${encodeURIComponent(doc.slug)}?token=${encodeURIComponent(access.secret)}` });
+});
+
+// Removing takes a document out of the workspace. The row is kept, marked
+// deleted, the same way the rest of the server deletes documents.
+workspaceRoutes.delete('/workspace/documents/:slug', writeRateLimiter, (req: Request, res: Response) => {
+  const doc = getWorkspaceDocument(req.params.slug);
+  if (!doc) {
+    res.status(404).json({ error: 'Document not found', code: 'NOT_FOUND' });
+    return;
+  }
+  if (!deleteDocument(doc.slug)) {
+    res.status(500).json({ error: 'Could not remove the document', code: 'WORKSPACE_DELETE_FAILED' });
+    return;
+  }
+  res.json({ removed: doc.slug });
 });
 
 workspaceRoutes.get('/workspace/documents/:slug/content', (req: Request, res: Response) => {

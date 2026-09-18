@@ -60,6 +60,9 @@ function stripBlockPrefix(text: string): { text: string; prefix: string } {
   return match ? { text: text.slice(match[0].length), prefix: match[0].trim() } : { text, prefix: '' };
 }
 
+const MULTI_BLOCK_QUOTE =
+  'That quote spans more than one paragraph, and a suggestion has to stay inside one paragraph, heading, or list item. Make one suggestion per paragraph. To merge several paragraphs into one block (a list, for example), replace the first paragraph with the full new content and use suggest_delete on each of the others.';
+
 const QUOTE_NOT_FOUND =
   'That exact text was not found in the document. Call get_selection or get_document, copy the passage character for character, and try again.';
 
@@ -258,6 +261,11 @@ export class VoiceToolRunner {
   }
 
   private async addSuggestion(op: { kind: 'replace' | 'insert' | 'delete'; quote: string; content?: string }): Promise<ToolResult> {
+    // The editor can display a suggestion that spans paragraphs but cannot apply
+    // one, so it would sit there unacceptable. One block per suggestion; the
+    // replacement itself may still be several blocks (a paragraph into a list).
+    if (/\n\s*\n/.test(op.quote.trim())) return { error: MULTI_BLOCK_QUOTE };
+
     // Two pending suggestions on the same text cannot both be shown: the editor
     // renders one suggestion mark per range and thrashes when two compete. Make
     // the model resolve the existing one first instead of stacking a new one.
@@ -378,6 +386,13 @@ export class VoiceToolRunner {
       if (pending.has(id) && (await apply(id))) done.push(id);
     }
     this.recentSuggestionIds = this.recentSuggestionIds.filter((id) => !done.includes(id));
+    if (done.length < targets.length && verb === 'accepted') {
+      return {
+        [verb]: done.length,
+        requested: targets.length,
+        note: 'Some suggestions could not be applied in the editor. Tell the author, reject those with reject_suggestions, and suggest the change again one paragraph at a time.',
+      };
+    }
     return { [verb]: done.length, requested: targets.length };
   }
 }

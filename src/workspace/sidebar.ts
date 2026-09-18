@@ -129,6 +129,10 @@ const STYLE = `
   cursor: pointer;
   color: #374151;
 }
+.workspace-row { position: relative; }
+.workspace-remove { position: absolute; top: 7px; right: 6px; opacity: 0; background: #fbfbfa; }
+.workspace-row:hover .workspace-remove, .workspace-remove:focus-visible { opacity: 1; }
+.workspace-row:hover .workspace-item { padding-right: 38px; }
 .workspace-item:hover { background: rgba(12, 14, 20, 0.05); }
 .workspace-item[aria-current="page"] { background: rgba(79, 124, 255, 0.12); color: #1b2a57; }
 .workspace-item svg { flex-shrink: 0; margin-top: 2px; color: #9aa1ad; }
@@ -354,8 +358,32 @@ export class WorkspaceSidebar {
       item.addEventListener('click', () => {
         if (doc.slug !== current) void this.open(doc.slug);
       });
-      this.list.appendChild(item);
+
+      // A button cannot hold another button, so the row holds both.
+      const row = document.createElement('div');
+      row.className = 'workspace-row';
+      row.appendChild(item);
+      if (doc.slug !== current) {
+        const remove = document.createElement('button');
+        remove.className = 'workspace-icon-btn workspace-remove';
+        remove.type = 'button';
+        remove.innerHTML = CLOSE_ICON;
+        remove.title = `Remove "${doc.title}"`;
+        remove.setAttribute('aria-label', `Remove ${doc.title}`);
+        remove.addEventListener('click', () => void this.remove(doc));
+        row.appendChild(remove);
+      }
+      this.list.appendChild(row);
     }
+  }
+
+  private async remove(doc: WorkspaceDocument): Promise<void> {
+    if (!window.confirm(`Remove "${doc.title}" from the workspace?`)) return;
+    const ok = await fetch(`${this.options.getApiBase()}/workspace/documents/${encodeURIComponent(doc.slug)}`, { method: 'DELETE' })
+      .then((response) => response.ok)
+      .catch(() => false);
+    if (!ok) this.showNote('Could not remove that document.', 'error');
+    await this.refresh();
   }
 
   private async open(slug: string): Promise<void> {

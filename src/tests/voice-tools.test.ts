@@ -187,6 +187,18 @@ async function run(): Promise<void> {
     'the unanchored suggestion was withdrawn on the server',
   );
 
+  // A quote across paragraphs can be shown but never applied, so it is refused
+  // before it reaches the server. A multi-block replacement is fine.
+  h = createHarness();
+  const spanning = await h.runner.run('suggest_replace', { quote: 'First paragraph.\n\nSecond paragraph.', replacement: '* One\n* Two' });
+  assertEqual(typeof spanning.error, 'string', 'a quote spanning paragraphs is refused');
+  assertEqual(h.requests.length, 0, 'a refused quote made no request');
+  assertEqual(
+    (await h.runner.run('suggest_replace', { quote: 'First paragraph.', replacement: '* One\n\n* Two' })).ok,
+    true,
+    'a replacement may span blocks',
+  );
+
   // all=true sweeps everything pending, including other authors' suggestions.
   h = createHarness();
   h.pending = [pendingMark('x', 'A', 'a'), pendingMark('y', 'B', 'b')];
