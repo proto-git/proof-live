@@ -168,7 +168,8 @@ export class VoiceTape {
     }
 
     const sweeping = this.mode === 'connecting' || this.mode === 'working';
-    if (!sweeping && !this.muted && now - this.lastPush >= PUSH_MS) {
+    // A muted microphone silences the author's side only; the agent still shows.
+    if (!sweeping && now - this.lastPush >= PUSH_MS) {
       this.lastPush = now;
       this.bars.push(this.peak);
       if (this.bars.length > this.capacity) this.bars.splice(0, this.bars.length - this.capacity);
@@ -209,7 +210,7 @@ export class VoiceTape {
     for (let slot = 0; slot < this.capacity; slot++) {
       const bar = slot >= offset ? this.bars[slot - offset] : { v: 0.04, who: 'quiet' as TapeFloor };
       const fade = slot < FADE_BARS ? 0.25 + (0.75 * slot) / FADE_BARS : 1;
-      ctx.globalAlpha = fade * (this.muted ? 0.4 : 1);
+      ctx.globalAlpha = fade * (this.muted && bar.who !== 'agent' ? 0.4 : 1);
       ctx.fillStyle = this.colors[bar.who];
       this.bar(slot * (BAR_PX + GAP_PX), Math.max(1, bar.v * (height / 2 - 1)), height);
     }
@@ -245,7 +246,7 @@ export class VoiceTape {
     const segment = (width - gap * (REDUCED_SEGMENTS - 1)) / REDUCED_SEGMENTS;
     const who = bar.who !== 'quiet' ? bar.who : this.floor;
     const talking = this.mode === 'listening' || this.mode === 'speaking';
-    const lit = this.muted || !talking || bar.who === 'quiet' ? 0 : Math.ceil(bar.v * REDUCED_SEGMENTS);
+    const lit = !talking || bar.who === 'quiet' ? 0 : Math.ceil(bar.v * REDUCED_SEGMENTS);
     for (let i = 0; i < REDUCED_SEGMENTS; i++) {
       ctx.fillStyle = i < lit && who !== 'quiet' ? this.colors[who] : this.colors.quiet;
       ctx.beginPath();
