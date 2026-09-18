@@ -199,6 +199,31 @@ async function run(): Promise<void> {
     'a replacement may span blocks',
   );
 
+  // Insertions are proposed as "anchor plus new content", because the editor
+  // loses the anchor when it accepts a bridge-created insert with block content.
+  // (The harness document is "# Title" followed by the paragraph "Old line".)
+  h = createHarness();
+  await h.runner.run('suggest_insert', { anchor_quote: 'Old line', content: 'and more' });
+  assertEqual(
+    h.requests[0].body,
+    { type: 'suggestion.add', kind: 'replace', quote: 'Old line', content: 'Old line and more', by: 'ai:gemini-live' },
+    'inline text extends its anchor',
+  );
+  h = createHarness();
+  await h.runner.run('suggest_insert', { anchor_quote: 'Old line', content: '## Key Metrics\n\n* Customers: 8' });
+  assertEqual(h.requests[0].body.content, 'Old line\n\n## Key Metrics\n\n* Customers: 8', 'a new section follows a whole paragraph');
+  h = createHarness();
+  await h.runner.run('suggest_insert', { anchor_quote: '# Title', content: 'An opening paragraph.\n\nAnd another.', position: 'before' });
+  assertEqual(
+    { quote: h.requests[0].body.quote, content: h.requests[0].body.content },
+    { quote: 'Title', content: 'An opening paragraph.\n\nAnd another.\n\n# Title' },
+    'position before keeps the heading and its marker',
+  );
+  h = createHarness();
+  const partial = await h.runner.run('suggest_insert', { anchor_quote: 'Old', content: '## Section\n\nText' });
+  assertEqual(typeof partial.error, 'string', 'a new block needs a whole paragraph or heading as its anchor');
+  assertEqual(h.requests.length, 0, 'a refused insertion made no request');
+
   // all=true sweeps everything pending, including other authors' suggestions.
   h = createHarness();
   h.pending = [pendingMark('x', 'A', 'a'), pendingMark('y', 'B', 'b')];

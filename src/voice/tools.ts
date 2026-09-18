@@ -63,6 +63,53 @@ function stripBlockPrefix(text: string): { text: string; prefix: string } {
 const MULTI_BLOCK_QUOTE =
   'That quote spans more than one paragraph, and a suggestion has to stay inside one paragraph, heading, or list item. Make one suggestion per paragraph. To merge several paragraphs into one block (a list, for example), replace the first paragraph with the full new content and use suggest_delete on each of the others.';
 
+const BLOCK_ANCHOR_REQUIRED =
+  'A new paragraph, section, or list has to be anchored on a whole paragraph or a whole heading, quoted in full. Call get_document, pick the paragraph or heading next to where the new content belongs, and pass position "before" or "after".';
+
+const LIST_ANCHOR_REFUSED =
+  'New blocks cannot be anchored on a list item. To add content after a list, anchor on the heading or paragraph that follows the list and pass position "before". To add an item to the list itself, use suggest_replace on the last item with both items as the replacement.';
+
+// Content that introduces its own block: a heading, a list, a quote, or more
+// than one paragraph. Anything else is inline text that joins the anchor's block.
+function isBlockContent(content: string): boolean {
+  const trimmed = content.trim();
+  return /\n\s*\n/.test(trimmed) || BLOCK_PREFIX.test(trimmed) || /\n\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>)/.test(trimmed);
+}
+
+function joinInline(first: string, second: string): string {
+  const needsSpace = !/\s$/.test(first) && !/^[\s.,;:!?)]/.test(second);
+  return needsSpace ? `${first} ${second.trim()}` : `${first}${second}`;
+}
+
+// The rendered text of a Markdown block, close enough to what the author sees
+// (and the model quotes) to compare against.
+function blockPlainText(raw: string): string {
+  return raw
+    .split('\n')
+    .map((line) => line.replace(BLOCK_PREFIX, ''))
+    .join(' ')
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__|\*|_|~~|`)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function findWholeBlock(markdown: string, anchor: string): { raw: string; kind: 'paragraph' | 'heading' | 'list' } | null {
+  const wanted = anchor.replace(/(\*\*|__|\*|_|~~|`)/g, '').replace(/\s+/g, ' ').trim();
+  for (const chunk of markdown.split(/\n\s*\n/)) {
+    const raw = chunk.trim();
+    if (!raw) continue;
+    const listLike = raw.split('\n').some((line) => /^\s{0,3}(?:[-*+]\s|\d+[.)]\s|>)/.test(line));
+    if (listLike) {
+      // A quote that names one item of a list still has to be reported as a list.
+      if (raw.split('\n').some((line) => blockPlainText(line) === wanted) || blockPlainText(raw) === wanted) return { raw, kind: 'list' };
+      continue;
+    }
+    if (blockPlainText(raw) === wanted) return { raw, kind: /^\s{0,3}#{1,6}\s/.test(raw) ? 'heading' : 'paragraph' };
+  }
+  return null;
+}
+
 const QUOTE_NOT_FOUND =
   'That exact text was not found in the document. Call get_selection or get_document, copy the passage character for character, and try again.';
 
@@ -153,10 +200,10 @@ export class VoiceToolRunner {
       }
 
       case 'suggest_insert': {
-        const quote = stripBlockPrefix(asString(args.after_quote)).text;
+        const quote = stripBlockPrefix(asString(args.anchor_quote) || asString(args.after_quote)).text;
         const content = asString(args.content);
-        if (!quote || !content) return { error: 'after_quote and content are required' };
-        return this.addSuggestion({ kind: 'insert', quote, content });
+        if (!quote || !content) return { error: 'anchor_quote and content are required' };
+        return this.addInsertion(quote, content, args.position === 'before' ? 'before' : 'after');
       }
 
       case 'suggest_delete': {
@@ -258,6 +305,27 @@ export class VoiceToolRunner {
       markdown: markdown.slice(0, MAX_DOCUMENT_CHARS),
       ...(markdown.length > MAX_DOCUMENT_CHARS ? { truncated: true } : {}),
     };
+  }
+
+  // An insertion is proposed as a replacement of its anchor with "anchor plus
+  // new content". The editor's own insert suggestions treat the anchored text as
+  // the text being inserted, so accepting a bridge-created insert with block
+  // content (a new section, a list) replaces the anchor and loses it. Replacing
+  // a whole paragraph or heading with several blocks is reliable.
+  private async addInsertion(anchor: string, content: string, position: 'before' | 'after'): Promise<ToolResult> {
+    if (!isBlockContent(content)) {
+      const joined = position === 'before' ? joinInline(content, anchor) : joinInline(anchor, content);
+      return this.addSuggestion({ kind: 'replace', quote: anchor, content: joined });
+    }
+
+    const snapshot = stripReviewMetadata(this.context.editor.getMarkdownSnapshot()?.content ?? '');
+    const block = findWholeBlock(snapshot, anchor);
+    if (!block) return { error: BLOCK_ANCHOR_REQUIRED };
+    if (block.kind === 'list') return { error: LIST_ANCHOR_REFUSED };
+
+    const addition = content.trim();
+    const replacement = position === 'before' ? `${addition}\n\n${block.raw}` : `${block.raw}\n\n${addition}`;
+    return this.addSuggestion({ kind: 'replace', quote: anchor, content: replacement });
   }
 
   private async addSuggestion(op: { kind: 'replace' | 'insert' | 'delete'; quote: string; content?: string }): Promise<ToolResult> {

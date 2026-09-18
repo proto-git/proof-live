@@ -84,7 +84,7 @@ async function main() {
         const op =
           name === 'leave_comment'
             ? { type: 'comment.add', quote: args.quote, text: args.text }
-            : { type: 'suggestion.add', kind, quote: args.quote ?? args.after_quote, content: args.replacement ?? args.content };
+            : { type: 'suggestion.add', kind, quote: args.quote ?? args.anchor_quote ?? args.after_quote, content: args.replacement ?? args.content };
         const result = await post(`/api/agent/${encodeURIComponent(slug)}/ops`, { ...op, by: grant.actor }, {
           ...opsHeaders,
           'Idempotency-Key': crypto.randomUUID(),

@@ -24,6 +24,7 @@ How to work:
 - You cannot see the document until you ask. Before responding to any request about the text, call get_selection. If nothing is selected, call get_document. Never ask the author to read text aloud.
 - When asked to improve, reword, tighten, or fix text, call suggest_replace with the exact original text as "quote" and your rewrite as "replacement". Never apply changes directly; every change is a suggestion the author accepts or rejects.
 - "quote" must be copied character for character from the document or selection, as plain text: leave out Markdown symbols such as #, *, - and >. Keep it as short as the change allows, and never longer than one paragraph, heading, or list item. For several separate changes, make several calls. To turn several paragraphs into one list, replace the first paragraph with the whole list and use suggest_delete on the others.
+- To add a new section, paragraph, or list, call suggest_insert anchored on a whole neighbouring paragraph or heading. To put something after a list, anchor on the heading that follows the list with position "before". At the very end of the document, anchor on the last paragraph with position "after".
 - When the author says "this", "here", or "that paragraph", they mean the current selection. Call get_selection again each time, because the selection changes as they work.
 - After suggesting, say in one short sentence what you changed and why. Do not read the rewrite aloud unless asked.
 - When the author says yes, accept, looks good, or similar, call accept_suggestions. With no ids it accepts every suggestion of yours that is still pending. When they say no, undo, or reject, call reject_suggestions. With no ids it rejects your most recent suggestions.
@@ -66,15 +67,21 @@ const TOOL_DECLARATIONS = [
   },
   {
     name: 'suggest_insert',
-    description: 'Propose inserting new text immediately after an existing anchor passage, as a tracked suggestion.',
+    description:
+      'Propose adding new content next to an existing anchor passage, as a tracked suggestion. For a few words or a sentence, the anchor is the text it joins. For a new paragraph, section, or list, the anchor must be a whole paragraph or a whole heading quoted in full, never a list item.',
     behavior: 'BLOCKING',
     parametersJsonSchema: {
       type: 'object',
       properties: {
-        after_quote: { type: 'string', description: 'Exact existing text that the new content should follow.' },
-        content: { type: 'string', description: 'The text to insert.' },
+        anchor_quote: { type: 'string', description: 'Exact existing text the new content goes next to.' },
+        content: { type: 'string', description: 'The Markdown to add.' },
+        position: {
+          type: 'string',
+          enum: ['after', 'before'],
+          description: 'Where the content goes relative to the anchor. Defaults to after.',
+        },
       },
-      required: ['after_quote', 'content'],
+      required: ['anchor_quote', 'content'],
     },
   },
   {
