@@ -9,6 +9,8 @@ export interface WorkspaceDocument {
   slug: string;
   title: string;
   updatedAt: string;
+  // The kind of file the document started as: md, mdx, or txt.
+  sourceType?: string;
 }
 
 export interface WorkspaceSidebarOptions {
@@ -146,7 +148,18 @@ const STYLE = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.workspace-item-meta { margin-top: 2px; font-size: 11.5px; color: #8a909c; }
+.workspace-item-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; font-size: 11.5px; color: #6b7280; }
+.workspace-chip {
+  padding: 1px 5px;
+  border-radius: 5px;
+  font: 600 9.5px/1.5 ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Consolas, monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #4b5563;
+  background: #eceef2;
+}
+.workspace-chip[data-type="txt"] { color: #7c4a03; background: #fdf0d5; }
+.workspace-chip[data-type="mdx"] { color: #1d3fa8; background: #e4ebff; }
 .workspace-empty { padding: 18px 12px; font-size: 13px; line-height: 1.5; color: #6b7280; }
 .workspace-note {
   margin: 0 14px 10px 14px;
@@ -351,7 +364,11 @@ export class WorkspaceSidebar {
       title.title = doc.title;
       const meta = document.createElement('div');
       meta.className = 'workspace-item-meta';
-      meta.textContent = doc.slug === current ? 'Open now' : `Edited ${relativeTime(doc.updatedAt)}`;
+      const chip = document.createElement('span');
+      chip.className = 'workspace-chip';
+      chip.dataset.type = doc.sourceType ?? 'md';
+      chip.textContent = doc.sourceType ?? 'md';
+      meta.append(chip, doc.slug === current ? 'Open now' : `Edited ${relativeTime(doc.updatedAt)}`);
       text.append(title, meta);
       item.innerHTML = DOC_ICON;
       item.appendChild(text);
@@ -398,11 +415,11 @@ export class WorkspaceSidebar {
     window.location.assign(url);
   }
 
-  private async create(title: string, markdown: string): Promise<{ url: string } | null> {
+  private async create(title: string, markdown: string, sourceType = 'md'): Promise<{ url: string } | null> {
     return fetch(`${this.options.getApiBase()}/workspace/documents`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, markdown }),
+      body: JSON.stringify({ title, markdown, sourceType }),
     })
       .then((response) => (response.ok ? (response.json() as Promise<{ url: string }>) : null))
       .catch(() => null);
@@ -434,7 +451,9 @@ export class WorkspaceSidebar {
       const markdown = await file.text().catch(() => null);
       // A document's own top heading is a better title than its filename.
       const title = markdown !== null && /^\s{0,3}#\s+\S/m.test(markdown) ? '' : titleFromFilename(file.name);
-      if (markdown === null || !(await this.create(title, markdown))) skipped.push(file.name);
+      const extension = file.name.split('.').pop()!.toLowerCase();
+      const sourceType = extension === 'markdown' ? 'md' : extension;
+      if (markdown === null || !(await this.create(title, markdown, sourceType))) skipped.push(file.name);
       else imported++;
     }
     this.setBusy(false);

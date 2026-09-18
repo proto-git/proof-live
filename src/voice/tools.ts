@@ -69,10 +69,12 @@ const BLOCK_ANCHOR_REQUIRED =
 const LIST_ANCHOR_REFUSED =
   'New blocks cannot be anchored on a list item. To add content after a list, anchor on the heading or paragraph that follows the list and pass position "before". To add an item to the list itself, use suggest_replace on the last item with both items as the replacement.';
 
-// Content that introduces its own block: a heading, a list, a quote, or more
-// than one paragraph. Anything else is inline text that joins the anchor's block.
+// Content that introduces its own block: a heading, a list, a quote, a fenced
+// block (a Mermaid diagram), an image on its own, or more than one paragraph.
+// Anything else is inline text that joins the anchor's block.
 function isBlockContent(content: string): boolean {
   const trimmed = content.trim();
+  if (/^(?:```|~~~)/.test(trimmed) || /^!\[[^\]]*\]\([^)]+\)$/.test(trimmed)) return true;
   return /\n\s*\n/.test(trimmed) || BLOCK_PREFIX.test(trimmed) || /\n\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>)/.test(trimmed);
 }
 
@@ -210,6 +212,13 @@ export class VoiceToolRunner {
         return this.addInsertion(quote, content, args.position === 'before' ? 'before' : 'after');
       }
 
+      case 'insert_image': {
+        const quote = stripBlockPrefix(asString(args.anchor_quote)).text;
+        const prompt = asString(args.prompt).trim();
+        if (!quote || !prompt) return { error: 'anchor_quote and prompt are required' };
+        return this.addImage(quote, prompt, asString(args.alt), asString(args.aspect_ratio), args.position === 'before' ? 'before' : 'after');
+      }
+
       case 'suggest_delete': {
         const quote = stripBlockPrefix(asString(args.quote)).text;
         if (!quote) return { error: 'quote is required' };
@@ -330,6 +339,28 @@ export class VoiceToolRunner {
     const addition = content.trim();
     const replacement = position === 'before' ? `${addition}\n\n${block.raw}` : `${block.raw}\n\n${addition}`;
     return this.addSuggestion({ kind: 'replace', quote: anchor, content: replacement });
+  }
+
+  // The anchor is checked before the image is made: generating costs quota and
+  // several seconds, and a picture that cannot be placed is wasted.
+  private async addImage(anchor: string, prompt: string, alt: string, aspectRatio: string, position: 'before' | 'after'): Promise<ToolResult> {
+    const snapshot = stripReviewMetadata(this.context.editor.getMarkdownSnapshot()?.content ?? '');
+    const block = findWholeBlock(snapshot, anchor);
+    if (!block) return { error: BLOCK_ANCHOR_REQUIRED };
+    if (block.kind === 'list') return { error: LIST_ANCHOR_REFUSED };
+
+    const { slug, shareToken, apiBase } = this.context;
+    const response = await fetch(`${apiBase}/live/image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-share-token': shareToken },
+      body: JSON.stringify({ slug, prompt, aspectRatio }),
+    });
+    const body = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
+    if (!response.ok || !body?.url) {
+      return { error: `${body?.error ?? 'The image could not be generated'}. Nothing was added to the document. Tell the author; do not retry unless they ask.` };
+    }
+    const label = (alt.trim() || prompt).replace(/[\[\]\n]/g, ' ').slice(0, 120).trim();
+    return this.addInsertion(anchor, `![${label}](${body.url})`, position);
   }
 
   private async addSuggestion(op: { kind: 'replace' | 'insert' | 'delete'; quote: string; content?: string }): Promise<ToolResult> {

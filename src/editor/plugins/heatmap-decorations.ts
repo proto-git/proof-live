@@ -286,7 +286,8 @@ function findBlockElement(view: EditorView, block: { from: number; to: number })
     }
 
     if (domNode instanceof HTMLElement && domNode !== milkdownEl) {
-      return domNode;
+      // A rendered diagram keeps its source in a collapsed <pre>; measure the whole block.
+      return domNode.closest<HTMLElement>('.proof-code-block') ?? domNode;
     }
   } catch {
     // Ignore errors

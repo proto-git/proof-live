@@ -742,11 +742,15 @@
       overflow-x: auto;
       padding: 24px;
     }
+    /* Drawn at its natural size and centred: a three-box flow stretched to the
+       column width fills the screen. Wide diagrams shrink to fit. */
     .proof-mermaid-svg {
       display: block;
-      width: 100%;
-      min-width: 640px;
+      width: auto;
+      max-width: 100%;
       height: auto;
+      max-height: 560px;
+      margin: 0 auto;
     }
     .proof-mermaid-status {
       padding: 14px 16px 0;
@@ -788,9 +792,6 @@
     @media (max-width: 720px) {
       .proof-mermaid-preview {
         padding: 16px;
-      }
-      .proof-mermaid-svg {
-        min-width: 520px;
       }
     }
     .milkdown blockquote {

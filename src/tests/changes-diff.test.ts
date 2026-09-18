@@ -27,6 +27,7 @@ test('strips provenance spans but keeps their text', () => {
     'A bold claim',
     'spans',
   );
+  assertEqual(stripProofSpans('```mermaid proof:W3sidHlw==\ngraph TD\n```'), '```mermaid\ngraph TD\n```', 'fence provenance');
   assertEqual(stripProofSpans('Body\n\n<!-- PROOF\n{ "version": 2 }\n-->\n').trim(), 'Body', 'metadata footer');
 });
 

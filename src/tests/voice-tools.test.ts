@@ -306,6 +306,39 @@ async function run(): Promise<void> {
   assertEqual((ambiguous.matches as unknown[]).length, 2, 'an ambiguous name returns the candidates instead of guessing');
   assertEqual(typeof (await h.runner.run('read_document', { document: 'roadmap' })).error, 'string', 'an unknown document is an error');
 
+  // A Mermaid diagram has no blank line and no block marker, but it is still a
+  // block of its own: it goes in beside the anchor, not into the anchor's sentence.
+  h = createHarness();
+  await h.runner.run('suggest_insert', { anchor_quote: 'Old line', content: '```mermaid\ngraph TD\n  A --> B\n```' });
+  assertEqual(h.requests[0].body.content, 'Old line\n\n```mermaid\ngraph TD\n  A --> B\n```', 'a fenced block is inserted as its own block');
+
+  // Images: generated on the server, then proposed like any other block insert.
+  h = createHarness();
+  const realFetch = (globalThis as any).fetch;
+  (globalThis as any).fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!String(input).endsWith('/live/image')) return realFetch(input, init);
+    h.requests.push({ url: String(input), headers: (init?.headers ?? {}) as Record<string, string>, body: JSON.parse(String(init?.body)) });
+    return new Response(JSON.stringify({ url: '/generated/abc.png' }), { status: 200 });
+  };
+  const pictured = await h.runner.run('insert_image', { anchor_quote: 'Old line', prompt: 'An orange on a white table', alt: 'An [orange]' });
+  assertEqual(pictured.ok, true, 'insert_image reports a pending suggestion');
+  assertEqual(h.requests[0].body, { slug: 'doc 1', prompt: 'An orange on a white table', aspectRatio: '' }, 'image request carries the document and prompt');
+  assertEqual(h.requests[0].headers['x-share-token'], 'tok', 'image request presents the edit token');
+  assertEqual(h.requests[1].body.content, 'Old line\n\n![An  orange](/generated/abc.png)', 'the image lands after its anchor with safe alt text');
+
+  // No anchor, no image: the quota is not spent on a picture that cannot be placed.
+  h = createHarness();
+  const unplaced = await h.runner.run('insert_image', { anchor_quote: 'Not in the document', prompt: 'An orange' });
+  assertEqual(typeof unplaced.error, 'string', 'an unknown anchor is an error');
+  assertEqual(h.requests.length, 0, 'nothing is generated for an unknown anchor');
+
+  // A failed generation is reported as such and leaves the document alone.
+  h = createHarness();
+  h.nextResponse = { status: 429, body: { error: 'The image model has no quota on this server\'s API key' } };
+  const failed = await h.runner.run('insert_image', { anchor_quote: 'Old line', prompt: 'An orange' });
+  assertEqual(/no quota/.test(String(failed.error)), true, 'the server reason reaches the agent');
+  assertEqual(h.requests.length, 1, 'no suggestion is made when generation fails');
+
   console.log('voice-tools: all assertions passed');
 }
 
