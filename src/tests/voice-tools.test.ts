@@ -222,6 +222,41 @@ async function run(): Promise<void> {
   assertEqual(h.requests.length, before, 'invalid call made no request');
   assertEqual(await h.runner.run('nonsense', {}), { error: 'Unknown tool: nonsense' }, 'unknown tool');
 
+  // Workspace: the agent finds other documents the way the author names them.
+  h = createHarness();
+  const workspace = [
+    { slug: 'doc 1', title: 'Q3 Platform Update' },
+    { slug: 'q2', title: 'Q2 Platform Update' },
+    { slug: 'style', title: 'Style Guide' },
+  ];
+  (globalThis as any).fetch = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/workspace/documents')) return new Response(JSON.stringify({ documents: workspace }));
+    if (url.endsWith('/workspace/documents/style/content')) {
+      return new Response(JSON.stringify({ title: 'Style Guide', markdown: 'Write plainly.' }));
+    }
+    return new Response('{}', { status: 404 });
+  };
+  assertEqual(
+    await h.runner.run('list_documents', {}),
+    {
+      documents: [
+        { id: 'doc 1', title: 'Q3 Platform Update', open_now: true },
+        { id: 'q2', title: 'Q2 Platform Update', open_now: false },
+        { id: 'style', title: 'Style Guide', open_now: false },
+      ],
+    },
+    'list_documents marks the open document',
+  );
+  assertEqual(
+    await h.runner.run('read_document', { document: 'style guide' }),
+    { id: 'style', title: 'Style Guide', markdown: 'Write plainly.' },
+    'read_document matches a title regardless of case',
+  );
+  const ambiguous = await h.runner.run('read_document', { document: 'platform update' });
+  assertEqual((ambiguous.matches as unknown[]).length, 2, 'an ambiguous name returns the candidates instead of guessing');
+  assertEqual(typeof (await h.runner.run('read_document', { document: 'roadmap' })).error, 'string', 'an unknown document is an error');
+
   console.log('voice-tools: all assertions passed');
 }
 

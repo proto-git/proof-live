@@ -3,6 +3,8 @@
 // cannot change the model, instructions, or tools) and also returns it to the
 // client, which must present the same config when it connects.
 
+import { isPublicWorkspaceEnabled } from './workspace-routes.js';
+
 export const LIVE_AGENT_ACTOR = 'ai:gemini-live';
 
 export const DEFAULT_LIVE_MODEL = 'gemini-3.8-live';
@@ -132,17 +134,47 @@ const TOOL_DECLARATIONS = [
   },
 ];
 
+// Only offered when the server has the shared workspace on; without it there is
+// nothing to list and the agent should not be told otherwise.
+const WORKSPACE_INSTRUCTION = `
+
+Other documents:
+- This document is one of several in a shared workspace. When the author refers to another document ("the Q2 update", "our style guide", "the notes I imported"), call list_documents to find it and read_document to read it. Do this before saying you cannot see something.
+- You can only suggest changes in the document that is open. Use other documents as source material: pull facts, match their tone, check consistency, and say which document something came from.`;
+
+const WORKSPACE_TOOL_DECLARATIONS = [
+  {
+    name: 'list_documents',
+    description: 'List the other documents in this workspace with their titles and ids.',
+    behavior: 'BLOCKING',
+    parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'read_document',
+    description: 'Read another document in this workspace. Pass its title (or part of it) or its id from list_documents.',
+    behavior: 'BLOCKING',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        document: { type: 'string', description: 'Title, part of the title, or id of the document to read.' },
+      },
+      required: ['document'],
+    },
+  },
+];
+
 export type LiveSessionConfig = Record<string, unknown>;
 
 export function buildLiveSessionConfig(options?: { resumeHandle?: string | null }): LiveSessionConfig {
   const handle = options?.resumeHandle?.trim();
+  const workspace = isPublicWorkspaceEnabled();
   return {
     responseModalities: ['AUDIO'],
-    systemInstruction: SYSTEM_INSTRUCTION,
+    systemInstruction: workspace ? SYSTEM_INSTRUCTION + WORKSPACE_INSTRUCTION : SYSTEM_INSTRUCTION,
     speechConfig: {
       voiceConfig: { prebuiltVoiceConfig: { voiceName: getLiveVoice() } },
     },
-    tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
+    tools: [{ functionDeclarations: workspace ? [...TOOL_DECLARATIONS, ...WORKSPACE_TOOL_DECLARATIONS] : TOOL_DECLARATIONS }],
     inputAudioTranscription: {},
     outputAudioTranscription: {},
     realtimeInputConfig: {

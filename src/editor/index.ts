@@ -146,6 +146,7 @@ import { initThemePicker, getThemePicker } from '../ui/theme-picker';
 import { fileClient } from '../bridge/file-client';
 import { shareClient, type CollabSessionInfo, type SharePendingEvent } from '../bridge/share-client';
 import { VoicePanel } from '../voice/panel';
+import { WorkspaceSidebar } from '../workspace/sidebar';
 import { collabClient, type CollabSyncStatus } from '../bridge/collab-client';
 import { shouldDeferShareMarksRefresh } from './share-marks-refresh';
 import { collabCursorBuilder, collabSelectionBuilder } from './plugins/collab-cursors';
@@ -10292,6 +10293,18 @@ function mountVoicePanel(): void {
     .catch((error) => console.warn('[voice] panel failed to mount', error));
 }
 
+// The shared workspace sidebar. It shows itself only when the server has the
+// workspace turned on, so this is a no-op everywhere else.
+function mountWorkspaceSidebar(): void {
+  if (!window.location?.pathname?.startsWith('/d/')) return;
+  void new WorkspaceSidebar({
+    getApiBase: () => shareClient.getApiBaseUrl(),
+    getCurrentSlug: () => shareClient.getSlug(),
+  })
+    .mount()
+    .catch((error) => console.warn('[workspace] sidebar failed to mount', error));
+}
+
 // Expose freeform prompt for sidebar
 (window as any).sendAgentPrompt = (prompt: string) => {
   // Refresh document content before triggering so the agent sees current state
@@ -10346,11 +10359,17 @@ function mountVoicePanel(): void {
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     console.log('[INIT] DOMContentLoaded - calling init()');
-    void window.proof.init().then(mountVoicePanel);
+    void window.proof.init().then(() => {
+      mountVoicePanel();
+      mountWorkspaceSidebar();
+    });
   });
 } else {
   console.log('[INIT] DOM ready - calling init() immediately');
-  void window.proof.init().then(mountVoicePanel);
+  void window.proof.init().then(() => {
+    mountVoicePanel();
+    mountWorkspaceSidebar();
+  });
 }
 
 export default window.proof;

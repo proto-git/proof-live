@@ -191,9 +191,70 @@ export class VoiceToolRunner {
           'rejected',
         );
 
+      case 'list_documents': {
+        const documents = await this.fetchWorkspaceDocuments();
+        if (!documents) return { error: 'The document list is not available right now.' };
+        return {
+          documents: documents.map((doc) => ({
+            id: doc.slug,
+            title: doc.title,
+            open_now: doc.slug === this.context.slug,
+          })),
+        };
+      }
+
+      case 'read_document':
+        return this.readWorkspaceDocument(asString(args.document).trim());
+
       default:
         return { error: `Unknown tool: ${name}` };
     }
+  }
+
+  private async fetchWorkspaceDocuments(): Promise<Array<{ slug: string; title: string }> | null> {
+    const response = await fetch(`${this.context.apiBase}/workspace/documents`);
+    if (!response.ok) return null;
+    const body = (await response.json().catch(() => null)) as { documents?: Array<{ slug: string; title: string }> } | null;
+    return body?.documents ?? null;
+  }
+
+  // The author names documents the way people do: "the Q2 update". Match the id
+  // exactly, then the title exactly, then as a fragment, and when more than one
+  // fits hand the choices back so the model asks.
+  private async readWorkspaceDocument(wanted: string): Promise<ToolResult> {
+    if (!wanted) return { error: 'document is required' };
+    const documents = await this.fetchWorkspaceDocuments();
+    if (!documents) return { error: 'The document list is not available right now.' };
+
+    const needle = wanted.toLowerCase();
+    const byId = documents.filter((doc) => doc.slug === wanted);
+    const exact = documents.filter((doc) => doc.title.toLowerCase() === needle);
+    const partial = documents.filter((doc) => doc.title.toLowerCase().includes(needle));
+    const matches = byId.length ? byId : exact.length ? exact : partial;
+
+    if (matches.length === 0) {
+      return { error: `No document matches "${wanted}".`, available: documents.map((doc) => doc.title) };
+    }
+    if (matches.length > 1) {
+      return {
+        error: 'More than one document matches. Ask the author which one, or pass an id.',
+        matches: matches.map((doc) => ({ id: doc.slug, title: doc.title })),
+      };
+    }
+    if (matches[0].slug === this.context.slug) {
+      return { error: 'That is the document already open. Use get_document for its current text.' };
+    }
+
+    const response = await fetch(`${this.context.apiBase}/workspace/documents/${encodeURIComponent(matches[0].slug)}/content`);
+    const body = (await response.json().catch(() => null)) as { title?: string; markdown?: string } | null;
+    if (!response.ok || typeof body?.markdown !== 'string') return { error: 'That document could not be read.' };
+    const markdown = body.markdown;
+    return {
+      id: matches[0].slug,
+      title: body.title ?? matches[0].title,
+      markdown: markdown.slice(0, MAX_DOCUMENT_CHARS),
+      ...(markdown.length > MAX_DOCUMENT_CHARS ? { truncated: true } : {}),
+    };
   }
 
   private async addSuggestion(op: { kind: 'replace' | 'insert' | 'delete'; quote: string; content?: string }): Promise<ToolResult> {

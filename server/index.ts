@@ -17,6 +17,7 @@ import {
 } from './client-capabilities.js';
 import { getBuildInfo } from './build-info.js';
 import { liveRoutes } from './live-routes.js';
+import { handleWorkspaceEntry, workspaceRoutes } from './workspace-routes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -127,6 +128,8 @@ async function main(): Promise<void> {
 
   app.use(discoveryRoutes);
   app.use('/api', liveRoutes);
+  app.use('/api', workspaceRoutes);
+  app.get('/workspace', handleWorkspaceEntry);
   app.use('/api', enforceApiClientCompatibility, apiRoutes);
   app.use('/api/agent', agentRoutes);
   app.use(apiRoutes);

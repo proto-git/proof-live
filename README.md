@@ -21,6 +21,14 @@ How it works:
 
 Code: `server/live-config.ts` (instruction and tools), `server/live-routes.ts` (token route), `src/voice/` (audio, session, tools, panel), `src/tests/voice-tools.test.ts`.
 
+### Shared workspace (optional)
+
+Set `PROOF_PUBLIC_WORKSPACE=1` and the editor gains a sidebar listing the workspace's documents, with **New** and **Import** (Markdown files, by button or drag and drop). `/workspace` is a single address that lands on the most recently edited document. With the workspace on, the voice agent also gets `list_documents` and `read_document`, so you can say "pull the deployment numbers from the Q2 update" while editing a different document. It can read other documents but only suggests changes in the open one.
+
+This is for demos and for deployments that sit behind their own access control: **anyone who can reach the site can open, create, and edit workspace documents.** Only documents created through the workspace are listed; documents shared by link stay private. Real multi-user access needs accounts in front of `server/workspace-routes.ts`.
+
+Code: `server/workspace-routes.ts`, `src/workspace/sidebar.ts`.
+
 ### Voice configuration
 
 | Variable | Required | Default | Purpose |
