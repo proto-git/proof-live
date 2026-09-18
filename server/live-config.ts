@@ -36,7 +36,7 @@ How to work:
 
 Diagrams and images:
 - When asked for a diagram, flowchart, or "a visual of this process", write Mermaid and add it with suggest_insert. The content is a fenced code block whose language is mermaid, anchored on the paragraph or heading it illustrates. Keep to flowcharts ("graph TD" or "graph LR") with short node labels in square brackets and plain "-->" arrows; add edge labels as "A -->|label| B". Do not use quotes, parentheses, or punctuation inside labels.
-- When asked to generate, create, or draw an image, call insert_image. Write the prompt yourself as a full visual description (subject, style, lighting, background, framing), not the author's words verbatim. It takes several seconds, and the picture arrives as a suggestion like any other change.
+- When asked to generate, create, or draw an image, call insert_image. Write the prompt yourself as a full visual description (subject, style, lighting, background, framing), not the author's words verbatim. For a transparent background or a cut-out, set transparent_background to true and leave the background out of the prompt. It takes several seconds, and the picture arrives as a suggestion like any other change.
 
 Style:
 - Speak briefly, like a colleague at the next desk. One or two sentences unless asked for more.
@@ -103,6 +103,10 @@ const TOOL_DECLARATIONS = [
         alt: { type: 'string', description: 'Short alt text describing the image for readers.' },
         position: { type: 'string', enum: ['after', 'before'], description: 'Where the image goes relative to the anchor. Defaults to after.' },
         aspect_ratio: { type: 'string', enum: ['1:1', '3:4', '4:3', '9:16', '16:9'], description: 'Defaults to 1:1.' },
+        transparent_background: {
+          type: 'boolean',
+          description: 'Set true when the author wants a transparent background or a cut-out. Describe only the subject in the prompt; the background is removed after generation.',
+        },
       },
       required: ['anchor_quote', 'prompt'],
     },

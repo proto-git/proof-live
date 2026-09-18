@@ -11,6 +11,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveDocumentAccessRole } from './db.js';
+import { cutOutBackground, promptForCutout } from './image-cutout.js';
 import { createRateLimiter } from './rate-limiter.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -126,15 +127,24 @@ imageRoutes.post('/live/image', imageRateLimiter, async (req: Request, res: Resp
     return;
   }
   const aspectRatio = typeof body.aspectRatio === 'string' && ASPECT_RATIOS.has(body.aspectRatio) ? body.aspectRatio : '1:1';
+  const transparent = body.transparent === true;
 
   try {
-    const image = await generator(prompt, aspectRatio);
+    let image = await generator(transparent ? promptForCutout(prompt) : prompt, aspectRatio);
+    let transparentApplied = false;
+    if (transparent) {
+      const cutOut = await cutOutBackground(image.data).catch(() => null);
+      if (cutOut) {
+        image = { data: cutOut, mimeType: 'image/png' };
+        transparentApplied = true;
+      }
+    }
     const extension = EXTENSIONS[image.mimeType];
     if (!extension) throw new ImageGenerationError(`Unexpected image type ${image.mimeType}`, 'IMAGE_FAILED');
     const file = `${randomUUID()}.${extension}`;
     await mkdir(getImageDir(), { recursive: true });
     await writeFile(path.join(getImageDir(), file), image.data);
-    res.json({ url: `/generated/${file}`, mimeType: image.mimeType });
+    res.json({ url: `/generated/${file}`, mimeType: image.mimeType, ...(transparent ? { transparent: transparentApplied } : {}) });
   } catch (error) {
     const code = error instanceof ImageGenerationError ? error.code : 'IMAGE_FAILED';
     console.error('[image] generation failed', code, error instanceof Error ? error.message : error);

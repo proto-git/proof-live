@@ -216,7 +216,7 @@ export class VoiceToolRunner {
         const quote = stripBlockPrefix(asString(args.anchor_quote)).text;
         const prompt = asString(args.prompt).trim();
         if (!quote || !prompt) return { error: 'anchor_quote and prompt are required' };
-        return this.addImage(quote, prompt, asString(args.alt), asString(args.aspect_ratio), args.position === 'before' ? 'before' : 'after');
+        return this.addImage(quote, prompt, asString(args.alt), asString(args.aspect_ratio), args.transparent_background === true, args.position === 'before' ? 'before' : 'after');
       }
 
       case 'suggest_delete': {
@@ -343,7 +343,14 @@ export class VoiceToolRunner {
 
   // The anchor is checked before the image is made: generating costs quota and
   // several seconds, and a picture that cannot be placed is wasted.
-  private async addImage(anchor: string, prompt: string, alt: string, aspectRatio: string, position: 'before' | 'after'): Promise<ToolResult> {
+  private async addImage(
+    anchor: string,
+    prompt: string,
+    alt: string,
+    aspectRatio: string,
+    transparent: boolean,
+    position: 'before' | 'after',
+  ): Promise<ToolResult> {
     const snapshot = stripReviewMetadata(this.context.editor.getMarkdownSnapshot()?.content ?? '');
     const block = findWholeBlock(snapshot, anchor);
     if (!block) return { error: BLOCK_ANCHOR_REQUIRED };
@@ -353,14 +360,19 @@ export class VoiceToolRunner {
     const response = await fetch(`${apiBase}/live/image`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-share-token': shareToken },
-      body: JSON.stringify({ slug, prompt, aspectRatio }),
+      body: JSON.stringify({ slug, prompt, aspectRatio, transparent }),
     });
-    const body = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
+    const body = (await response.json().catch(() => null)) as { url?: string; error?: string; transparent?: boolean } | null;
     if (!response.ok || !body?.url) {
       return { error: `${body?.error ?? 'The image could not be generated'}. Nothing was added to the document. Tell the author; do not retry unless they ask.` };
     }
     const label = (alt.trim() || prompt).replace(/[\[\]\n]/g, ' ').slice(0, 120).trim();
-    return this.addInsertion(anchor, `![${label}](${body.url})`, position);
+    const result = await this.addInsertion(anchor, `![${label}](${body.url})`, position);
+    // The cut-out can fail when the model does not draw a plain background.
+    if (transparent && body.transparent === false && result.ok) {
+      return { ...result, note: 'The background could not be removed, so the image has a plain background. Tell the author.' };
+    }
+    return result;
   }
 
   private async addSuggestion(op: { kind: 'replace' | 'insert' | 'delete'; quote: string; content?: string }): Promise<ToolResult> {

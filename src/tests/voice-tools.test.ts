@@ -322,7 +322,7 @@ async function run(): Promise<void> {
   };
   const pictured = await h.runner.run('insert_image', { anchor_quote: 'Old line', prompt: 'An orange on a white table', alt: 'An [orange]' });
   assertEqual(pictured.ok, true, 'insert_image reports a pending suggestion');
-  assertEqual(h.requests[0].body, { slug: 'doc 1', prompt: 'An orange on a white table', aspectRatio: '' }, 'image request carries the document and prompt');
+  assertEqual(h.requests[0].body, { slug: 'doc 1', prompt: 'An orange on a white table', aspectRatio: '', transparent: false }, 'image request carries the document and prompt');
   assertEqual(h.requests[0].headers['x-share-token'], 'tok', 'image request presents the edit token');
   assertEqual(h.requests[1].body.content, 'Old line\n\n![An  orange](/generated/abc.png)', 'the image lands after its anchor with safe alt text');
 

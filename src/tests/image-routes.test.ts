@@ -9,6 +9,8 @@ import type { AddressInfo } from 'node:net';
 
 const dataDir = mkdtempSync(path.join(tmpdir(), 'proof-image-routes-'));
 process.env.DATABASE_PATH = path.join(dataDir, 'test.db');
+// The route allows six generations a minute per client; give each request its own address.
+process.env.PROOF_TRUST_PROXY_HEADERS = '1';
 
 function assertEqual<T>(actual: T, expected: T, message: string): void {
   const a = JSON.stringify(actual);
@@ -39,10 +41,11 @@ async function run(): Promise<void> {
   app.get('/generated/:file', serveGeneratedImage);
   const server = app.listen(0);
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  let requests = 0;
   const post = (body: unknown, token?: string) =>
     fetch(`${base}/api/live/image`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { 'x-share-token': token } : {}) },
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': `10.0.0.${++requests}`, ...(token ? { 'x-share-token': token } : {}) },
       body: JSON.stringify(body),
     });
 
@@ -69,10 +72,51 @@ async function run(): Promise<void> {
     assertEqual(fallback.status, 200, 'an unknown aspect ratio falls back');
     assertEqual(prompts[1], '1:1 Another', 'to square');
 
+    // Transparent: the model is asked for white, never for "transparent", and the
+    // server cuts the background out into a real alpha PNG.
+    const sharp = (await import('sharp')).default;
+    const { promptForCutout, removeBackground } = await import('../../server/image-cutout.ts');
+    const studio = await sharp({ create: { width: 40, height: 40, channels: 3, background: '#ffffff' } })
+      .composite([{ input: await sharp({ create: { width: 20, height: 20, channels: 3, background: '#e8590c' } }).png().toBuffer(), left: 10, top: 10 }])
+      .jpeg()
+      .toBuffer();
+    setImageGeneratorForTests(async (prompt, aspectRatio) => {
+      prompts.push(`${aspectRatio} ${prompt}`);
+      return { data: studio, mimeType: 'image/jpeg' };
+    });
+    const cut = await post({ slug: 'imgdoc', prompt: 'An orange on a fully transparent background', transparent: true }, editor);
+    const cutBody = (await cut.json()) as { url: string; transparent: boolean };
+    assertEqual(cutBody.transparent, true, 'the cut-out is reported');
+    assertEqual(cutBody.url.endsWith('.png'), true, 'and saved as a PNG, which can carry alpha');
+    assertEqual(/transparent/i.test(prompts[prompts.length - 1]), false, 'the model never sees the word transparent');
+    assertEqual(/pure white/.test(prompts[prompts.length - 1]), true, 'it is asked for a white studio background');
+    const pixels = await sharp(Buffer.from(await (await fetch(base + cutBody.url)).arrayBuffer())).raw().toBuffer({ resolveWithObject: true });
+    const alphaAt = (x: number, y: number) => pixels.data[(y * pixels.info.width + x) * 4 + 3];
+    const middle = Math.floor(pixels.info.width / 2);
+    assertEqual([alphaAt(0, 0), alphaAt(middle, middle)], [0, 255], 'the background is clear and the subject is solid');
+    assertEqual(pixels.info.width < 30, true, 'the empty frame around the subject is cropped away');
+
+    // A white highlight inside the subject is not connected to the edge, so it stays.
+    const ring = new Uint8Array(9 * 9 * 4).fill(255);
+    for (let y = 2; y < 7; y++) for (let x = 2; x < 7; x++) if (x !== 4 || y !== 4) ring.set([200, 60, 10, 255], (y * 9 + x) * 4);
+    removeBackground(ring, 9, 9);
+    assertEqual([ring[3], ring[(4 * 9 + 4) * 4 + 3]], [0, 255], 'an enclosed white area survives the cut-out');
+    assertEqual(promptForCutout('A logo, PNG with alpha channel, on a transparent background.').includes('alpha'), false, 'format words come out of the prompt');
+
+    // No plain background to remove: the picture is kept as it came.
+    const busy = await sharp({ create: { width: 40, height: 40, channels: 3, background: '#224466' } }).jpeg().toBuffer();
+    setImageGeneratorForTests(async () => ({ data: busy, mimeType: 'image/jpeg' }));
+    const kept = (await (await post({ slug: 'imgdoc', prompt: 'A night sky', transparent: true }, editor)).json()) as { url: string; transparent: boolean };
+    assertEqual([kept.transparent, kept.url.endsWith('.jpg')], [false, true], 'a picture with no plain background is left alone');
+
+    setImageGeneratorForTests(async (prompt) => {
+      if (prompt === 'quota') throw new ImageGenerationError('limit: 0', 'IMAGE_QUOTA');
+      return { data: png, mimeType: 'image/png' };
+    });
     const quota = await post({ slug: 'imgdoc', prompt: 'quota' }, editor);
     assertEqual(quota.status, 429, 'a quota failure is reported as one');
     assertEqual(((await quota.json()) as { code: string }).code, 'IMAGE_QUOTA', 'with a code the client can read');
-    assertEqual(existsSync(getImageDir()) && readdirSync(getImageDir()).length, 2, 'a failed generation writes nothing');
+    assertEqual(existsSync(getImageDir()) && readdirSync(getImageDir()).length, 4, 'a failed generation writes nothing');
   } finally {
     server.close();
     setImageGeneratorForTests(null);
