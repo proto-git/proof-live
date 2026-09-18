@@ -22,6 +22,8 @@ interface Harness {
   pending: Mark[];
   selection: { text: string; block: string; from: number; to: number } | null;
   nextResponse: { status: number; body: Record<string, unknown> };
+  // When false, suggestions the server accepts never show up in the editor.
+  marksSync: boolean;
 }
 
 function createHarness(): Harness {
@@ -32,6 +34,7 @@ function createHarness(): Harness {
     pending: [],
     selection: null,
     nextResponse: { status: 200, body: { success: true, markId: 'm1' } },
+    marksSync: true,
   } as unknown as Harness;
 
   const editor: VoiceEditorApi = {
@@ -61,7 +64,12 @@ function createHarness(): Harness {
       headers: (init?.headers ?? {}) as Record<string, string>,
       body: JSON.parse(String(init?.body ?? '{}')),
     });
-    return new Response(JSON.stringify(harness.nextResponse.body), { status: harness.nextResponse.status });
+    const sent = JSON.parse(String(init?.body ?? '{}')) as Record<string, string>;
+    const reply = harness.nextResponse;
+    if (sent.type === 'suggestion.add' && reply.body.success && harness.marksSync) {
+      harness.pending = [...harness.pending, pendingMark(String(reply.body.markId), sent.quote, sent.content ?? '')];
+    }
+    return new Response(JSON.stringify(reply.body), { status: reply.status });
   };
 
   harness.runner = new VoiceToolRunner({
@@ -71,6 +79,7 @@ function createHarness(): Harness {
     actor: 'ai:gemini-live',
     getAuthorActor: () => 'human:Dan',
     editor,
+    markVisibleTimeoutMs: 60,
   });
   return harness;
 }
@@ -153,6 +162,29 @@ async function run(): Promise<void> {
     await h.runner.run('suggest_replace', { quote: 'Old line', replacement: 'Attempt two' }),
     { ok: true, id: 'm1', status: 'pending author review' },
     'suggestion allowed once the range is free',
+  );
+
+  // Markdown block markers are not part of the rendered text the editor anchors on.
+  h = createHarness();
+  await h.runner.run('suggest_replace', { quote: '# Old title', replacement: '# New title' });
+  assertEqual(
+    { quote: h.requests[0].body.quote, content: h.requests[0].body.content },
+    { quote: 'Old title', content: 'New title' },
+    'heading marker stripped from quote and replacement',
+  );
+  h = createHarness();
+  await h.runner.run('suggest_replace', { quote: 'A paragraph', replacement: '* A bullet' });
+  assertEqual(h.requests[0].body.content, '* A bullet', 'a replacement that changes the block type keeps its marker');
+
+  // A suggestion the author cannot see is withdrawn and reported as a failure.
+  h = createHarness();
+  h.marksSync = false;
+  const unseen = await h.runner.run('suggest_replace', { quote: 'Old line', replacement: 'New line' });
+  assertEqual(typeof unseen.error, 'string', 'an unanchored suggestion is an error');
+  assertEqual(
+    h.requests[h.requests.length - 1].body,
+    { type: 'suggestion.reject', markId: 'm1', by: 'human:Dan' },
+    'the unanchored suggestion was withdrawn on the server',
   );
 
   // all=true sweeps everything pending, including other authors' suggestions.

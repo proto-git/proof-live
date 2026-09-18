@@ -1023,6 +1023,8 @@ class ProofEditorImpl implements ProofEditor {
   private collabCanComment: boolean = false;
   private collabCanEdit: boolean = false;
   private applyingCollabRemote: boolean = false;
+  // True while an accept or reject is dispatching its own transaction.
+  private resolvingMarkLocally: boolean = false;
   private activeCollabSession: CollabSessionInfo | null = null;
   private collabRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private collabSessionRefreshInFlight: boolean = false;
@@ -1943,6 +1945,14 @@ class ProofEditorImpl implements ProofEditor {
       if (attemptSeq !== this.collabHydrationAttemptSeq) return;
       if (!this.editor || !this.collabEnabled) {
         finish();
+        return;
+      }
+
+      // While an accept or reject is dispatching, the editor is ahead of the
+      // Yjs fragment by exactly that change. That is not a failed hydration;
+      // re-rendering from Yjs now would throw the change away.
+      if (this.resolvingMarkLocally) {
+        requestAnimationFrame(() => attempt(count));
         return;
       }
 
@@ -4649,6 +4659,16 @@ class ProofEditorImpl implements ProofEditor {
 
   private applyLatestCollabMarksToEditor(): void {
     if (!this.isShareMode || !this.collabEnabled || !this.editor) return;
+    // The collab client reports sync status synchronously while a local
+    // transaction is still being applied. Re-applying remote marks at that point
+    // builds a transaction from the state that is about to be replaced and
+    // dispatches it inside the outer dispatch; when another suggestion is
+    // pending it has real steps, and the accept's text change is lost. Wait
+    // until the local change has landed.
+    if (this.resolvingMarkLocally) {
+      setTimeout(() => this.applyLatestCollabMarksToEditor(), 0);
+      return;
+    }
     if (Object.keys(this.lastReceivedServerMarks).length === 0) return;
     if (this.isEditorDocStructurallyEmpty()) return;
 
@@ -8475,7 +8495,12 @@ class ProofEditorImpl implements ProofEditor {
     this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx);
       const parser = ctx.get(parserCtx);
-      success = acceptMark(view, markId, parser);
+      this.resolvingMarkLocally = true;
+      try {
+        success = acceptMark(view, markId, parser);
+      } finally {
+        this.resolvingMarkLocally = false;
+      }
       console.log('[markAccept] Accepted:', success);
       if (success && this.isShareMode) {
         const metadata = getMarkMetadataWithQuotes(view.state);
@@ -8512,7 +8537,12 @@ class ProofEditorImpl implements ProofEditor {
     let success = false;
     this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx);
-      success = rejectMark(view, markId);
+      this.resolvingMarkLocally = true;
+      try {
+        success = rejectMark(view, markId);
+      } finally {
+        this.resolvingMarkLocally = false;
+      }
       console.log('[markReject] Rejected:', success);
       if (success && this.isShareMode) {
         const metadata = getMarkMetadataWithQuotes(view.state);

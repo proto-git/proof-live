@@ -34,6 +34,8 @@ export interface VoiceToolContext {
   // The human at this editor, for example "human:Dan".
   getAuthorActor(): string;
   editor: VoiceEditorApi;
+  // How long to wait for a new suggestion to show up in this editor.
+  markVisibleTimeoutMs?: number;
 }
 
 const MAX_DOCUMENT_CHARS = 60_000;
@@ -41,6 +43,22 @@ const MAX_DOCUMENT_CHARS = 60_000;
 const MARK_SYNC_DELAY_MS = 1200;
 const PROJECTION_RETRY_LIMIT = 3;
 const PROJECTION_RETRY_DELAY_MS = 600;
+
+const MARK_VISIBLE_TIMEOUT_MS = 5000;
+const MARK_VISIBLE_POLL_MS = 150;
+
+const NOT_ANCHORED =
+  'The suggestion could not be placed in the document, so it was withdrawn and nothing changed. Quote the plain text exactly as it reads, without Markdown symbols such as #, *, - or >, and try again.';
+
+// The model reads Markdown, so it tends to quote "# Title" or "* item". The
+// editor anchors quotes against rendered text, where those markers do not exist.
+const BLOCK_PREFIX = /^\s{0,3}(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s?)/;
+
+function stripBlockPrefix(text: string): { text: string; prefix: string } {
+  if (text.includes('\n')) return { text, prefix: '' };
+  const match = text.match(BLOCK_PREFIX);
+  return match ? { text: text.slice(match[0].length), prefix: match[0].trim() } : { text, prefix: '' };
+}
 
 const QUOTE_NOT_FOUND =
   'That exact text was not found in the document. Call get_selection or get_document, copy the passage character for character, and try again.';
@@ -120,21 +138,26 @@ export class VoiceToolRunner {
       }
 
       case 'suggest_replace': {
-        const quote = asString(args.quote);
-        const content = asString(args.replacement);
+        const stripped = stripBlockPrefix(asString(args.quote));
+        const quote = stripped.text;
+        let content = asString(args.replacement);
         if (!quote || !content) return { error: 'quote and replacement are required' };
+        // "# Old title" -> "# New title" means the text changes and the block
+        // stays what it is, so the same marker comes off the replacement too.
+        const contentPrefix = stripBlockPrefix(content);
+        if (stripped.prefix && contentPrefix.prefix === stripped.prefix) content = contentPrefix.text;
         return this.addSuggestion({ kind: 'replace', quote, content });
       }
 
       case 'suggest_insert': {
-        const quote = asString(args.after_quote);
+        const quote = stripBlockPrefix(asString(args.after_quote)).text;
         const content = asString(args.content);
         if (!quote || !content) return { error: 'after_quote and content are required' };
         return this.addSuggestion({ kind: 'insert', quote, content });
       }
 
       case 'suggest_delete': {
-        const quote = asString(args.quote);
+        const quote = stripBlockPrefix(asString(args.quote)).text;
         if (!quote) return { error: 'quote is required' };
         return this.addSuggestion({ kind: 'delete', quote });
       }
@@ -189,6 +212,14 @@ export class VoiceToolRunner {
 
     const result = await this.postOp({ type: 'suggestion.add', ...op });
     if (!result.ok) return { error: result.error };
+
+    // The server accepting a suggestion does not mean the author can see it.
+    // Report success only once it is pending in this editor; otherwise take it
+    // back so the agent is never confident about a change that does not exist.
+    if (result.markId && !(await this.waitUntilVisible(result.markId))) {
+      await this.postOp({ type: 'suggestion.reject', markId: result.markId }, { asAuthor: true });
+      return { error: NOT_ANCHORED };
+    }
     if (!this.batchOpen) {
       this.recentSuggestionIds = [];
       this.batchOpen = true;
@@ -239,6 +270,15 @@ export class VoiceToolRunner {
     const message = payload.error || `Request failed (${response.status})`;
     const anchorMissing = payload.code === 'ANCHOR_NOT_FOUND' || /not found in document/i.test(message);
     return { ok: false, error: anchorMissing ? QUOTE_NOT_FOUND : message };
+  }
+
+  private async waitUntilVisible(markId: string): Promise<boolean> {
+    const deadline = Date.now() + (this.context.markVisibleTimeoutMs ?? MARK_VISIBLE_TIMEOUT_MS);
+    for (;;) {
+      if (this.context.editor.getPendingMarkSuggestions().some((mark) => mark.id === markId)) return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, MARK_VISIBLE_POLL_MS));
+    }
   }
 
   private revealWhenSynced(markId: string | undefined): void {
