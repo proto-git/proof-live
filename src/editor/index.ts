@@ -1413,7 +1413,7 @@ class ProofEditorImpl implements ProofEditor {
 
       // Set title
       // A working title of our own: this fork is not the hosted Proof service (see TRADEMARKS.md).
-      document.title = doc.title ? `${doc.title} - Live Draft` : 'Shared document - Live Draft';
+      document.title = doc.title ? `${doc.title} - Proof Live` : 'Shared document - Proof Live';
       this.shareDocTitle = typeof doc.title === 'string' && doc.title.trim().length > 0
         ? doc.title.trim()
         : 'Untitled';
@@ -3324,7 +3324,7 @@ class ProofEditorImpl implements ProofEditor {
     const normalized = typeof title === 'string' ? title.trim() : '';
     const nextTitle = normalized.length > 0 ? normalized : 'Untitled';
     this.shareDocTitle = nextTitle;
-    document.title = `${nextTitle} - Live Draft`;
+    document.title = `${nextTitle} - Proof Live`;
     this.updateShareBannerTitleDisplay();
   }
 
