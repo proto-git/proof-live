@@ -2740,7 +2740,13 @@ export function accept(view: EditorView, markId: string, parser?: MarkdownParser
     }
     case 'delete': {
       for (const range of ranges) {
-        tr = tr.delete(range.from, range.to);
+        // Deleting all the text of a top-level paragraph or heading should take
+        // the block with it; deleting only the text leaves an empty paragraph.
+        const analysis = analyzeTextblockRange(tr.doc, range);
+        const wholeTopLevelBlock = analysis.coversWholeParent
+          && tr.doc.resolve(range.from).depth === 1
+          && tr.doc.childCount > 1;
+        tr = wholeTopLevelBlock ? tr.delete(analysis.parentStart, analysis.parentEnd) : tr.delete(range.from, range.to);
       }
       applied = true;
       break;
