@@ -31,6 +31,8 @@ Code: `server/live-config.ts` (instruction and tools), `server/live-routes.ts` (
 
 Use a headset, or keep echo cancellation on, so the agent does not hear itself through your speakers.
 
+To check a deployment without a microphone, `scripts/live-smoke.ts` drives the same session with text turns: it creates a document, mints a voice token, asks for a rewrite, then says "try again", and prints every tool call. It needs `PROOF_SHARE_MARKDOWN_API_KEY` (and `PROOF_BASE_URL` for anything other than the Railway deployment) in the environment, for example `railway run -- npx tsx scripts/live-smoke.ts`.
+
 ### Self-hosting fixes in this fork
 
 Upstream's public extraction does not run correctly self-hosted as of `fb25787`. This fork fixes what it needed:

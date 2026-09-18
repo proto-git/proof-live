@@ -20,4 +20,6 @@ ENV NODE_ENV=production \
     PROOF_TRUST_PROXY_HEADERS=1
 
 # SQLite lives on a mounted volume; set DATABASE_PATH to a file on it.
-CMD ["npx", "tsx", "server/index.ts"]
+# tsx is run directly so SIGTERM from a redeploy reaches Node instead of being
+# reported by npx as a failed command.
+CMD ["./node_modules/.bin/tsx", "server/index.ts"]
