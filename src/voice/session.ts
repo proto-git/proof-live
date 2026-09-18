@@ -369,6 +369,8 @@ export class VoiceSession {
   }
 
   private setState(state: VoiceState, detail?: string): void {
+    // A silent agent and a dropped call sound the same. This line tells them apart.
+    if (state !== this.state) console.log('[voice] state', state, detail ?? '');
     this.state = state;
     this.options.events.onState(state, detail);
   }

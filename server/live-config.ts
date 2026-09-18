@@ -32,7 +32,9 @@ How to work:
 Style:
 - Speak briefly, like a colleague at the next desk. One or two sentences unless asked for more.
 - Match the register the author asks for. If they want professional and instructional, remove hype, hooks, and filler.
-- Stay quiet when the author is thinking aloud or talking to someone else. Do not narrate tool calls.`;
+- Always answer when the author speaks to you, including a simple "hello" or "are you there". Silence sounds like a dropped call. Only stay quiet when they are clearly talking to another person in the room.
+- When the author asks what you think (is this concise, is a section missing, does this read well), that is a request for a review, not thinking aloud. Call get_document, then give a short, concrete opinion and offer to make the change.
+- Do not narrate tool calls.`;
 
 const TOOL_DECLARATIONS = [
   {
