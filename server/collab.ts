@@ -38,6 +38,7 @@ import {
   upsertActiveCollabConnection,
   upsertPersistedGlobalCollabAdmissionGuard,
   updateDocument,
+  updateDocumentAtomicByRevision,
   type DocumentProjectionRow,
   type DocumentRow,
   type ProjectedDocumentRow,
@@ -1311,6 +1312,17 @@ function attachAuthenticatedCollabPresence(socketId: string, auth: CollabAuthCon
       const timer = setInterval(() => {
         try {
           noteDocumentLiveCollabLease(auth.slug, auth.accessEpoch as number);
+          // The connection row expires on the same TTL as the lease. Without
+          // this refresh, a tab open for longer than the TTL leaves a live lease
+          // with no epoch-matching connection, which hosted runtimes treat as a
+          // remote replica holding the document and reject every write.
+          upsertActiveCollabConnection({
+            connectionId,
+            slug: auth.slug,
+            role: auth.role,
+            accessEpoch: auth.accessEpoch as number,
+            instanceId: ACTIVE_COLLAB_INSTANCE_ID,
+          });
         } catch {
           // best-effort heartbeat
         }
@@ -5713,6 +5725,32 @@ async function seedLegacyDocumentToPersistedYjsAsync(
     applyMarksMapDiff(ydoc.getMap('marks'), marks);
   }, 'legacy-seed-markdown');
   await seedFragmentFromLegacyMarkdown(ydoc, markdown);
+
+  // The editor's serializer normalizes markdown (for example "- item" becomes
+  // "* item"). If the stored row keeps the author's original spelling, it never
+  // matches the Yjs-derived text, sameAuthoritativeContent() stays false, and
+  // the document is stuck with mutationReady=false. Store the normalized form
+  // so the baseline and the row agree from the start.
+  //
+  // This function is also reached while loading an existing document that has
+  // no baseline, and `row` was read before several awaits. The write is
+  // therefore conditional on the revision we read: if another mutation landed
+  // in between, its content must win, so we skip normalization rather than
+  // overwrite it with text derived from a stale row.
+  const normalizedMarkdown = await deriveMarkdownProjectionFromFragment(ydoc);
+  if (normalizedMarkdown && normalizedMarkdown.trim() && normalizedMarkdown !== (row.markdown ?? '')) {
+    const written = updateDocumentAtomicByRevision(
+      slug,
+      row.revision,
+      normalizedMarkdown,
+      canonicalizeStoredMarks(encodeMarksMap(ydoc.getMap('marks'))),
+    );
+    const normalizedRow = written ? getDocumentBySlug(slug) : null;
+    if (normalizedRow) return persistCanonicalYjsBaseline(slug, normalizedRow, ydoc);
+    if (!written) {
+      console.warn('[collab] skipped baseline markdown normalization; document changed during seeding', { slug });
+    }
+  }
   return persistCanonicalYjsBaseline(slug, row, ydoc);
 }
 

@@ -1760,6 +1760,16 @@ export function applyRemoteMarks(
         continue;
       }
 
+      // A mark type excludes itself, so adding a second mark of the same type
+      // over a range that already carries one evicts the first. On the next
+      // pass the evicted mark has no anchor and is re-added, evicting this one,
+      // and the two ping-pong on every transaction. Leave the range as it is
+      // and let the failure backoff hold this mark until the document changes.
+      if (markTypeName === 'suggestion' && tr.doc.rangeHasMark(range.from, range.to, markType)) {
+        recordMarkAnchorHydrationFailure(id, tr.doc, now);
+        continue;
+      }
+
       const attrs: Record<string, unknown> = { id, by: stored.by || 'unknown' };
       if (markTypeName === 'suggestion') {
         attrs.kind = stored.kind;
@@ -2730,7 +2740,13 @@ export function accept(view: EditorView, markId: string, parser?: MarkdownParser
     }
     case 'delete': {
       for (const range of ranges) {
-        tr = tr.delete(range.from, range.to);
+        // Deleting all the text of a top-level paragraph or heading should take
+        // the block with it; deleting only the text leaves an empty paragraph.
+        const analysis = analyzeTextblockRange(tr.doc, range);
+        const wholeTopLevelBlock = analysis.coversWholeParent
+          && tr.doc.resolve(range.from).depth === 1
+          && tr.doc.childCount > 1;
+        tr = wholeTopLevelBlock ? tr.delete(analysis.parentStart, analysis.parentEnd) : tr.delete(range.from, range.to);
       }
       applied = true;
       break;
@@ -2792,8 +2808,14 @@ export function accept(view: EditorView, markId: string, parser?: MarkdownParser
 
   if (!applied) return false;
   const updatedMetadata = removeMetadataEntries(metadata, [markId]);
-  finalizeMarkTransaction(view, tr, updatedMetadata);
+  // Tombstone before dispatching. The dispatch synchronously runs the
+  // marks-change sync, which merges the server's copy of the marks back in. If
+  // the tombstone does not exist yet, the server's still-pending copy of this
+  // suggestion is restored and re-anchored, and when the accepted text still
+  // contains the old quote (a title that was extended) it lands on the new
+  // text, ready to be applied a second time.
   markResolvedMarkIds([markId], Date.now(), RESOLVED_MARK_TOMBSTONE_TTL_MS, 'deleted');
+  finalizeMarkTransaction(view, tr, updatedMetadata);
   emitMarkEvent('suggestion.accepted', { markId, kind: mark.kind, by: mark.by });
   return true;
 }
@@ -2835,8 +2857,9 @@ export function reject(view: EditorView, markId: string): boolean {
   }
 
   const updatedMetadata = removeMetadataEntries(metadata, [markId]);
-  finalizeMarkTransaction(view, tr, updatedMetadata);
+  // Tombstone before dispatching, for the same reason as in accept().
   markResolvedMarkIds([markId], Date.now(), RESOLVED_MARK_TOMBSTONE_TTL_MS, 'deleted');
+  finalizeMarkTransaction(view, tr, updatedMetadata);
   emitMarkEvent('suggestion.rejected', { markId, kind: mark.kind, by: mark.by });
   return true;
 }

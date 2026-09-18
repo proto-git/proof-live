@@ -145,6 +145,8 @@ import { syncAgentSessions } from '../analytics/agent-sessions';
 import { initThemePicker, getThemePicker } from '../ui/theme-picker';
 import { fileClient } from '../bridge/file-client';
 import { shareClient, type CollabSessionInfo, type SharePendingEvent } from '../bridge/share-client';
+import { VoicePanel } from '../voice/panel';
+import { WorkspaceSidebar } from '../workspace/sidebar';
 import { collabClient, type CollabSyncStatus } from '../bridge/collab-client';
 import { shouldDeferShareMarksRefresh } from './share-marks-refresh';
 import { collabCursorBuilder, collabSelectionBuilder } from './plugins/collab-cursors';
@@ -740,6 +742,7 @@ export interface ProofEditor {
   insertAt(offset: number, text: string, author?: string): void;
   insertAtCursor(text: string, author?: string): void;
   replaceSelection(text: string, author?: string): void;
+  getSelectionContext(): { text: string; block: string; from: number; to: number } | null;
   replaceRange(from: number, to: number, text: string, author?: string): void;
 
   // Agent cursor methods (for AI agent navigation)
@@ -1021,6 +1024,8 @@ class ProofEditorImpl implements ProofEditor {
   private collabCanComment: boolean = false;
   private collabCanEdit: boolean = false;
   private applyingCollabRemote: boolean = false;
+  // True while an accept or reject is dispatching its own transaction.
+  private resolvingMarkLocally: boolean = false;
   private activeCollabSession: CollabSessionInfo | null = null;
   private collabRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private collabSessionRefreshInFlight: boolean = false;
@@ -1070,8 +1075,6 @@ class ProofEditorImpl implements ProofEditor {
   private shareBannerSyncLabelEl: HTMLElement | null = null;
   private shareBannerTitleEditing: boolean = false;
   private shareTitlePersistSeq: number = 0;
-  private shareLastStatusLabel: string = '';
-  private shareStatusTextVisibleUntilMs: number = 0;
   private shareStatusHideTimer: ReturnType<typeof setTimeout> | null = null;
   private shareWsUnsubscribe: (() => void) | null = null;
   private shareEventPollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1946,6 +1949,14 @@ class ProofEditorImpl implements ProofEditor {
         return;
       }
 
+      // While an accept or reject is dispatching, the editor is ahead of the
+      // Yjs fragment by exactly that change. That is not a failed hydration;
+      // re-rendering from Yjs now would throw the change away.
+      if (this.resolvingMarkLocally) {
+        requestAnimationFrame(() => attempt(count));
+        return;
+      }
+
       if (this.isCollabHydratedForEditing()) {
         finish();
         this.markInitialCollabHydrationComplete();
@@ -2770,7 +2781,7 @@ class ProofEditorImpl implements ProofEditor {
 
   private getSyncStatusTextLabel(label: string): string {
     const map: Record<string, string> = {
-      'Saved': 'Saved',
+      'Saved': 'Ready',
       'Saving...': 'Saving',
       'Syncing...': 'Syncing',
       'Connecting...': 'Connecting',
@@ -2780,29 +2791,7 @@ class ProofEditorImpl implements ProofEditor {
       'Document is no longer shared': 'Unshared',
       'Live sync unavailable': 'No sync',
     };
-    return map[label] ?? 'Saved';
-  }
-
-  private shouldShowStatusText(statusLabel: string): boolean {
-    const normalized = statusLabel.trim() || 'Saved';
-    const now = Date.now();
-
-    if (normalized !== this.shareLastStatusLabel) {
-      this.shareLastStatusLabel = normalized;
-      this.shareStatusTextVisibleUntilMs = now + 3_500;
-      if (this.shareStatusHideTimer) {
-        clearTimeout(this.shareStatusHideTimer);
-        this.shareStatusHideTimer = null;
-      }
-      this.shareStatusHideTimer = setTimeout(() => {
-        this.shareStatusHideTimer = null;
-        const label = document.querySelector('#share-banner .share-pill-status-inline .status-label') as HTMLElement | null;
-        if (label) label.style.display = 'none';
-      }, 3_550);
-      return true;
-    }
-
-    return now < this.shareStatusTextVisibleUntilMs;
+    return map[label] ?? 'Ready';
   }
 
   private getHumanCollaboratorAvatars(): Array<{ name: string; color: string; initial: string }> {
@@ -3378,9 +3367,10 @@ class ProofEditorImpl implements ProofEditor {
       this.shareBannerSyncDotEl.style.animation = '';
     }
 
-    const statusText = this.getSyncStatusTextLabel(syncStatus.label);
-    this.shareBannerSyncLabelEl.textContent = statusText;
-    this.shareBannerSyncLabelEl.style.display = this.shouldShowStatusText(statusText) ? '' : 'none';
+    // The label stays visible. A pulsing dot on its own reads as "something is
+    // stuck"; "Ready" next to it says the document is synced and listening.
+    this.shareBannerSyncLabelEl.textContent = this.getSyncStatusTextLabel(syncStatus.label);
+    this.shareBannerSyncLabelEl.style.display = '';
   }
 
   private renderShareBannerContent(banner: HTMLElement, otherViewerCount: number): void {
@@ -3406,20 +3396,9 @@ class ProofEditorImpl implements ProofEditor {
     this.closePresenceMenu();
     this.closeAgentMenu();
 
-    const wordmark = document.createElement('a');
-    wordmark.textContent = 'Proof';
-    wordmark.href = 'https://www.proofeditor.ai';
-    wordmark.target = '_blank';
-    wordmark.rel = 'noopener';
-    wordmark.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:0 8px;border-radius:10px;font-weight:600;color:#333;font-size:13px;letter-spacing:-0.2px;flex-shrink:0;text-decoration:none;';
-
-    const separator = document.createElement('span');
-    separator.className = 'share-pill-sep';
-    separator.style.cssText = 'width:1px;height:16px;background:rgba(0,0,0,0.1);flex-shrink:0';
-
     const title = document.createElement('span');
     title.className = 'share-pill-title';
-    title.style.cssText = 'font-weight:500;color:#374151;font-size:13px;flex:1 1 auto;min-width:0;';
+    title.style.cssText = 'font-weight:500;color:#374151;font-size:13px;flex:1 1 auto;min-width:0;padding-left:8px;';
     this.shareBannerTitleEl = title;
     this.updateShareBannerTitleDisplay();
     this.setupTitleEditing(title);
@@ -3449,7 +3428,7 @@ class ProofEditorImpl implements ProofEditor {
 
     const shareBtn = this.createShareMenuButton();
 
-    banner.replaceChildren(wordmark, separator, title, syncStatusSep, syncStatusInline, avatars, agentSlot, shareBtn);
+    banner.replaceChildren(title, syncStatusSep, syncStatusInline, avatars, agentSlot, shareBtn);
     this.scheduleBannerLayoutUpdate();
   }
 
@@ -4681,6 +4660,16 @@ class ProofEditorImpl implements ProofEditor {
 
   private applyLatestCollabMarksToEditor(): void {
     if (!this.isShareMode || !this.collabEnabled || !this.editor) return;
+    // The collab client reports sync status synchronously while a local
+    // transaction is still being applied. Re-applying remote marks at that point
+    // builds a transaction from the state that is about to be replaced and
+    // dispatches it inside the outer dispatch; when another suggestion is
+    // pending it has real steps, and the accept's text change is lost. Wait
+    // until the local change has landed.
+    if (this.resolvingMarkLocally) {
+      setTimeout(() => this.applyLatestCollabMarksToEditor(), 0);
+      return;
+    }
     if (Object.keys(this.lastReceivedServerMarks).length === 0) return;
     if (this.isEditorDocStructurallyEmpty()) return;
 
@@ -6098,6 +6087,23 @@ class ProofEditorImpl implements ProofEditor {
 
       console.log('[insertAtCursor] Inserted text at cursor:', from, 'actualLength:', actualInsertedLength);
     });
+  }
+
+  // Selected text plus the text of the block(s) it sits in. Used by the voice
+  // agent so "reword this" can resolve without the author reading anything aloud.
+  getSelectionContext(): { text: string; block: string; from: number; to: number } | null {
+    if (!this.editor) return null;
+    const view = this.editor.ctx.get(editorViewCtx);
+    const { from, to, $from, $to } = view.state.selection;
+    const doc = view.state.doc;
+    const blockFrom = $from.depth > 0 ? $from.start(1) : from;
+    const blockTo = $to.depth > 0 ? $to.end(1) : to;
+    return {
+      text: doc.textBetween(from, to, '\n'),
+      block: doc.textBetween(blockFrom, blockTo, '\n'),
+      from,
+      to,
+    };
   }
 
   /**
@@ -8480,76 +8486,40 @@ class ProofEditorImpl implements ProofEditor {
       return false;
     }
 
-    if (this.isShareMode) {
-      let canAccept = false;
-      this.editor.action((ctx) => {
-        const view = ctx.get(editorViewCtx);
-        canAccept = getPendingSuggestions(getMarks(view.state)).some((mark) => mark.id === markId);
-      });
-      if (!canAccept) {
-        console.warn('[markAccept] Suggestion not pending in share mode:', markId);
-        return false;
-      }
-
-      const actor = getCurrentActor();
-      void shareClient.acceptSuggestion(markId, actor).then((result) => {
-        if (!result || 'error' in result || result.success !== true) return;
-        const serverMarks = (result.marks && typeof result.marks === 'object' && !Array.isArray(result.marks))
-          ? result.marks as Record<string, StoredMark>
-          : null;
-        if (!serverMarks) return;
-        this.lastReceivedServerMarks = { ...serverMarks };
-        this.initialMarksSynced = true;
-        if (this.editor) {
-          this.editor.action((innerCtx) => {
-            const innerView = innerCtx.get(editorViewCtx);
-            applyRemoteMarks(innerView, serverMarks, { hydrateAnchors: this.collabCanEdit });
-            const stats = getAuthorshipStats(innerView);
-            this.bridge.authorshipStatsUpdated(stats);
-          });
-        }
-        captureEvent('suggestion_accepted', { count: 1 });
-      }).catch((error) => {
-        console.error('[markAccept] Failed to persist suggestion acceptance via share mutation:', error);
-      });
-      return true;
-    }
-
+    // Accept is applied in the editor and reaches the server through the normal
+    // Yjs sync, the same way typing does. The previous share-mode path asked the
+    // server to apply the accept to its canonical copy while this browser still
+    // held the live document; the two then merged into duplicated text and the
+    // suggestion stayed pending. A follow-up server-side accept is skipped for
+    // the same reason: it races the sync and can apply the replacement twice.
     let success = false;
     this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx);
       const parser = ctx.get(parserCtx);
-      success = acceptMark(view, markId, parser);
+      this.resolvingMarkLocally = true;
+      try {
+        success = acceptMark(view, markId, parser);
+      } finally {
+        this.resolvingMarkLocally = false;
+      }
       console.log('[markAccept] Accepted:', success);
       if (success && this.isShareMode) {
         const metadata = getMarkMetadataWithQuotes(view.state);
         this.lastReceivedServerMarks = { ...metadata };
         this.initialMarksSynced = true;
-
-        const actor = getCurrentActor();
-        void shareClient.acceptSuggestion(markId, actor).then((result) => {
-          if (!result || 'error' in result || result.success !== true) return;
-          const serverMarks = (result.marks && typeof result.marks === 'object' && !Array.isArray(result.marks))
-            ? result.marks as Record<string, StoredMark>
-            : null;
-          if (!serverMarks) return;
-          this.lastReceivedServerMarks = { ...serverMarks };
-          this.initialMarksSynced = true;
-          if (this.editor) {
-            this.editor.action((innerCtx) => {
-              const innerView = innerCtx.get(editorViewCtx);
-              const mergedMetadata = mergePendingServerMarks(getMarkMetadataWithQuotes(innerView.state), serverMarks);
-              setMarkMetadata(innerView, mergedMetadata);
-            });
-          }
-        }).catch((error) => {
-          console.error('[markAccept] Failed to persist suggestion acceptance via share mutation:', error);
-        });
+        // Push the accepted status now. The marks-change callback skips
+        // documents with no remaining action marks, so accepting the last
+        // suggestion would otherwise never tell the server, which keeps its
+        // copy pending, re-anchors it, and syncs it straight back.
+        this.flushShareMarks();
       }
       if (success) {
         captureEvent('suggestion_accepted', { count: 1 });
         const stats = getAuthorshipStats(view);
-        this.bridge.authorshipStatsUpdated(stats);
+        // The desktop bridge is absent in the shared web editor. Throwing here
+        // happens after the accept was applied, so a caller that treats the
+        // throw as failure and retries applies the replacement again.
+        this.bridge?.authorshipStatsUpdated(stats);
       }
     });
 
@@ -8568,7 +8538,12 @@ class ProofEditorImpl implements ProofEditor {
     let success = false;
     this.editor.action((ctx) => {
       const view = ctx.get(editorViewCtx);
-      success = rejectMark(view, markId);
+      this.resolvingMarkLocally = true;
+      try {
+        success = rejectMark(view, markId);
+      } finally {
+        this.resolvingMarkLocally = false;
+      }
       console.log('[markReject] Rejected:', success);
       if (success && this.isShareMode) {
         const metadata = getMarkMetadataWithQuotes(view.state);
@@ -10301,6 +10276,35 @@ if (window.location?.pathname?.startsWith('/d/')) {
   };
 }
 
+// Voice editing (Gemini Live). Shared documents only, since minting a voice
+// session requires the document's edit token. Called once init() has resolved:
+// before that the editor instance is null, so a voice session started early
+// would have its tools read an empty document and fail to act on it.
+function mountVoicePanel(): void {
+  if (!window.location?.pathname?.startsWith('/d/')) return;
+  void new VoicePanel({
+    getSlug: () => shareClient.getSlug(),
+    getShareToken: () => shareClient.getShareToken(),
+    getApiBase: () => shareClient.getApiBaseUrl(),
+    getAuthorActor: () => getCurrentActor(),
+    editor: window.proof,
+  })
+    .mount()
+    .catch((error) => console.warn('[voice] panel failed to mount', error));
+}
+
+// The shared workspace sidebar. It shows itself only when the server has the
+// workspace turned on, so this is a no-op everywhere else.
+function mountWorkspaceSidebar(): void {
+  if (!window.location?.pathname?.startsWith('/d/')) return;
+  void new WorkspaceSidebar({
+    getApiBase: () => shareClient.getApiBaseUrl(),
+    getCurrentSlug: () => shareClient.getSlug(),
+  })
+    .mount()
+    .catch((error) => console.warn('[workspace] sidebar failed to mount', error));
+}
+
 // Expose freeform prompt for sidebar
 (window as any).sendAgentPrompt = (prompt: string) => {
   // Refresh document content before triggering so the agent sees current state
@@ -10355,11 +10359,17 @@ if (window.location?.pathname?.startsWith('/d/')) {
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     console.log('[INIT] DOMContentLoaded - calling init()');
-    window.proof.init();
+    void window.proof.init().then(() => {
+      mountVoicePanel();
+      mountWorkspaceSidebar();
+    });
   });
 } else {
   console.log('[INIT] DOM ready - calling init() immediately');
-  window.proof.init();
+  void window.proof.init().then(() => {
+    mountVoicePanel();
+    mountWorkspaceSidebar();
+  });
 }
 
 export default window.proof;
