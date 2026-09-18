@@ -8481,11 +8481,19 @@ class ProofEditorImpl implements ProofEditor {
         const metadata = getMarkMetadataWithQuotes(view.state);
         this.lastReceivedServerMarks = { ...metadata };
         this.initialMarksSynced = true;
+        // Push the accepted status now. The marks-change callback skips
+        // documents with no remaining action marks, so accepting the last
+        // suggestion would otherwise never tell the server, which keeps its
+        // copy pending, re-anchors it, and syncs it straight back.
+        this.flushShareMarks();
       }
       if (success) {
         captureEvent('suggestion_accepted', { count: 1 });
         const stats = getAuthorshipStats(view);
-        this.bridge.authorshipStatsUpdated(stats);
+        // The desktop bridge is absent in the shared web editor. Throwing here
+        // happens after the accept was applied, so a caller that treats the
+        // throw as failure and retries applies the replacement again.
+        this.bridge?.authorshipStatsUpdated(stats);
       }
     });
 

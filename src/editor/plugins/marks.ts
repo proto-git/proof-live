@@ -2802,8 +2802,14 @@ export function accept(view: EditorView, markId: string, parser?: MarkdownParser
 
   if (!applied) return false;
   const updatedMetadata = removeMetadataEntries(metadata, [markId]);
-  finalizeMarkTransaction(view, tr, updatedMetadata);
+  // Tombstone before dispatching. The dispatch synchronously runs the
+  // marks-change sync, which merges the server's copy of the marks back in. If
+  // the tombstone does not exist yet, the server's still-pending copy of this
+  // suggestion is restored and re-anchored, and when the accepted text still
+  // contains the old quote (a title that was extended) it lands on the new
+  // text, ready to be applied a second time.
   markResolvedMarkIds([markId], Date.now(), RESOLVED_MARK_TOMBSTONE_TTL_MS, 'deleted');
+  finalizeMarkTransaction(view, tr, updatedMetadata);
   emitMarkEvent('suggestion.accepted', { markId, kind: mark.kind, by: mark.by });
   return true;
 }
@@ -2845,8 +2851,9 @@ export function reject(view: EditorView, markId: string): boolean {
   }
 
   const updatedMetadata = removeMetadataEntries(metadata, [markId]);
-  finalizeMarkTransaction(view, tr, updatedMetadata);
+  // Tombstone before dispatching, for the same reason as in accept().
   markResolvedMarkIds([markId], Date.now(), RESOLVED_MARK_TOMBSTONE_TTL_MS, 'deleted');
+  finalizeMarkTransaction(view, tr, updatedMetadata);
   emitMarkEvent('suggestion.rejected', { markId, kind: mark.kind, by: mark.by });
   return true;
 }
