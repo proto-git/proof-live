@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Proof Editor</title>
+  <title>Live Draft</title>
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=20260310r">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=20260310r">
   <link rel="shortcut icon" href="/favicon.ico?v=20260310r">
@@ -1093,6 +1093,64 @@
       color: #333;
     }
 
+    /* Unexpected errors: a quiet toast in the corner (see the script at the end of the page) */
+    .pl-toast {
+      position: fixed;
+      left: 16px;
+      bottom: 16px;
+      z-index: 999999;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      box-sizing: border-box;
+      max-width: min(400px, calc(100vw - 32px));
+      padding: 12px 12px 12px 14px;
+      border-left: 3px solid var(--pl-danger-on-ink);
+      border-radius: var(--pl-radius-card);
+      background: var(--pl-ink);
+      color: var(--pl-text-on-ink);
+      box-shadow: var(--pl-shadow-float);
+      font: 400 13px/1.45 var(--pl-font);
+    }
+    .pl-toast strong {
+      font-weight: 600;
+    }
+    .pl-toast-detail {
+      display: block;
+      margin-top: 4px;
+      color: var(--pl-text-on-ink-muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    .pl-toast-close {
+      all: unset;
+      flex-shrink: 0;
+      padding: 4px 8px;
+      border-radius: var(--pl-radius-control);
+      color: var(--pl-text-on-ink-muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .pl-toast-close:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--pl-text-on-ink);
+    }
+    .pl-toast-close:focus-visible {
+      outline: 2px solid var(--pl-human-on-ink);
+      outline-offset: 2px;
+    }
+    @media (min-width: 900px) {
+      .workspace-open .pl-toast {
+        left: 288px;
+      }
+    }
+    @media print {
+      .pl-toast {
+        display: none;
+      }
+    }
+
     /* Loading state */
     .loading {
       display: flex;
@@ -1236,23 +1294,35 @@
         return true; // Suppress the error
       }
 
-      var errorDiv = document.createElement('div');
-      errorDiv.id = 'error-banner-' + Date.now();
-      errorDiv.style.cssText = 'position:fixed;top:0;left:0;right:0;background:red;color:white;padding:10px;z-index:999999;font-family:monospace;font-size:12px;cursor:pointer;';
-      errorDiv.textContent = 'JS Error: ' + msg + ' at ' + url + ':' + line + ' (click to dismiss)';
-      errorDiv.onclick = function() { errorDiv.remove(); };
-      document.body.appendChild(errorDiv);
+      showErrorToast(String(msg) + ' at ' + url + ':' + line);
       return false;
     };
     window.addEventListener('unhandledrejection', function(e) {
       console.error('[unhandledrejection]', e.reason);
-      var errorDiv = document.createElement('div');
-      errorDiv.id = 'rejection-banner-' + Date.now();
-      errorDiv.style.cssText = 'position:fixed;top:0;left:0;right:0;background:orange;color:white;padding:10px;z-index:999999;font-family:monospace;font-size:12px;cursor:pointer;';
-      errorDiv.textContent = 'Promise rejection: ' + (e.reason ? e.reason.message || e.reason : 'unknown') + ' (click to dismiss)';
-      errorDiv.onclick = function() { errorDiv.remove(); };
-      document.body.appendChild(errorDiv);
+      showErrorToast(String(e.reason ? e.reason.message || e.reason : 'unknown'));
     });
+
+    // One quiet toast in the corner instead of a red bar across the page. The
+    // full error is in the console; the toast keeps the latest message and a count.
+    var errorToastCount = 0;
+    function showErrorToast(detail) {
+      errorToastCount += 1;
+      var toast = document.getElementById('pl-error-toast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'pl-error-toast';
+        toast.className = 'pl-toast';
+        toast.setAttribute('role', 'status');
+        toast.innerHTML = '<div class="pl-toast-text"><strong>Something went wrong.</strong> The details are in the console.<span class="pl-toast-detail"></span></div><button type="button" class="pl-toast-close" aria-label="Dismiss">Dismiss</button>';
+        toast.querySelector('.pl-toast-close').onclick = function() {
+          errorToastCount = 0;
+          toast.remove();
+        };
+        document.body.appendChild(toast);
+      }
+      var more = errorToastCount > 1 ? ' (and ' + (errorToastCount - 1) + ' more)' : '';
+      toast.querySelector('.pl-toast-detail').textContent = detail.slice(0, 160) + more;
+    }
     console.log('[HTML] Error handlers installed');
   </script>
   <script type="module" src="./editor/index.ts"></script>
