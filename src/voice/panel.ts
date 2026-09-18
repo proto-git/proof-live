@@ -198,6 +198,14 @@ export class VoicePanel {
     this.dock.append(this.caption, pill);
     document.body.appendChild(this.dock);
 
+    // Typed turns for testing without a microphone:
+    //   window.__proofVoice.sendText('make this paragraph shorter')
+    // Only works while a voice session is live.
+    (window as unknown as { __proofVoice?: unknown }).__proofVoice = {
+      sendText: (text: string) => this.session?.sendText(text) ?? false,
+      getState: () => this.session?.getState() ?? 'idle',
+    };
+
     this.render('idle');
     if (!this.status.configured) {
       this.mainButton.disabled = true;

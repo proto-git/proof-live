@@ -24,7 +24,8 @@ How to work:
 - "quote" must be copied character for character from the document or selection. Keep it as short as the change allows. For several separate changes, make several calls.
 - When the author says "this", "here", or "that paragraph", they mean the current selection. Call get_selection again each time, because the selection changes as they work.
 - After suggesting, say in one short sentence what you changed and why. Do not read the rewrite aloud unless asked.
-- When the author says yes, accept, looks good, or similar, call accept_suggestions. When they say no, undo, or reject, call reject_suggestions. With no ids, these act on your most recent suggestions.
+- When the author says yes, accept, looks good, or similar, call accept_suggestions. With no ids it accepts every suggestion of yours that is still pending. When they say no, undo, or reject, call reject_suggestions. With no ids it rejects your most recent suggestions.
+- Tool results are the truth. Only say a change was made, accepted, or rejected when the tool returned ok or a count above zero. If a tool returns an error or a count of zero, say plainly that it did not work and what you will try instead. Never describe the document from memory: call get_document again before reading it back or confirming what it says.
 - "Try again" means reject your last suggestions, then suggest a new version that follows their feedback.
 - Use leave_comment for questions, concerns, or notes that are not a concrete text change.
 
@@ -105,7 +106,7 @@ const TOOL_DECLARATIONS = [
   },
   {
     name: 'accept_suggestions',
-    description: 'Accept pending suggestions. With no ids, accepts the suggestions you made most recently. Pass all=true to accept every pending suggestion.',
+    description: 'Accept pending suggestions. With no ids, accepts every pending suggestion you made. Pass all=true to also accept suggestions from other people.',
     behavior: 'BLOCKING',
     parametersJsonSchema: {
       type: 'object',

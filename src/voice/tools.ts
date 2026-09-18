@@ -89,7 +89,11 @@ export class VoiceToolRunner {
 
   async run(name: string, args: Record<string, unknown>): Promise<ToolResult> {
     try {
-      return await this.dispatch(name, args);
+      const result = await this.dispatch(name, args);
+      // Kept on purpose: when the agent says it did something it did not, this
+      // line in the browser console is the only record of what really happened.
+      console.log(`[voice] tool ${name}`, JSON.stringify(args), '->', JSON.stringify(result).slice(0, 400));
+      return result;
     } catch (error) {
       console.error(`[voice] tool ${name} failed`, error);
       return { error: error instanceof Error ? error.message : 'Tool failed' };
@@ -253,10 +257,18 @@ export class VoiceToolRunner {
     apply: (id: string) => Promise<boolean>,
     verb: string,
   ): Promise<ToolResult> {
-    const pending = new Set(this.context.editor.getPendingMarkSuggestions().map((mark) => mark.id));
+    const pendingMarks = this.context.editor.getPendingMarkSuggestions();
+    const pending = new Set(pendingMarks.map((mark) => mark.id));
+    const mine = pendingMarks.filter((mark) => mark.by === this.context.actor).map((mark) => mark.id);
     let targets = asStringArray(args.ids);
     if (args.all === true) targets = [...pending];
-    else if (targets.length === 0) targets = this.recentSuggestionIds.filter((id) => pending.has(id));
+    else if (targets.length === 0) {
+      // "Accept those" means everything the agent has on the table, which may
+      // span several turns (a clarifying question in between starts a new
+      // batch). "Try again" is about the latest attempt only.
+      const latest = this.recentSuggestionIds.filter((id) => pending.has(id));
+      targets = verb === 'accepted' || latest.length === 0 ? mine : latest;
+    }
 
     if (targets.length === 0) return { [verb]: 0, note: 'There were no matching pending suggestions.' };
 

@@ -104,6 +104,7 @@ function createHarness(options?: { autoMic?: boolean }): Harness {
           socket.audioChunks++;
         },
         sendToolResponse: () => undefined,
+        sendClientContent: () => undefined,
         close: () => {
           socket.closed = true;
         },

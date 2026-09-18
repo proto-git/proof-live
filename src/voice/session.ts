@@ -50,7 +50,7 @@ export class VoiceSessionError extends Error {
 class StartCancelled extends Error {}
 
 // The parts of the Gemini socket this file uses.
-export type LiveSocket = Pick<Session, 'sendRealtimeInput' | 'sendToolResponse' | 'close'>;
+export type LiveSocket = Pick<Session, 'sendRealtimeInput' | 'sendToolResponse' | 'sendClientContent' | 'close'>;
 
 export interface LiveSocketCallbacks {
   onmessage(message: LiveServerMessage): void;
@@ -106,6 +106,7 @@ export class VoiceSession {
   private reconnecting = false;
   private agentSpeaking = false;
   private pendingToolCalls = 0;
+  private toolQueue: Promise<void> = Promise.resolve();
   // Bumped by every start() and stop(). Async work captures the value it began
   // under and abandons itself if the author has since stopped or restarted.
   private epoch = 0;
@@ -135,6 +136,16 @@ export class VoiceSession {
 
   setMuted(muted: boolean): void {
     this.mic.setMuted(muted);
+  }
+
+  // A typed turn on the live conversation. The agent answers it exactly as it
+  // would a spoken one, which lets the whole path (model, tools, editor) be
+  // exercised without a microphone.
+  sendText(text: string): boolean {
+    if (!this.session || this.reconnecting || !text.trim()) return false;
+    this.tools?.endBatch();
+    this.session.sendClientContent({ turns: [{ role: 'user', parts: [{ text }] }], turnComplete: true });
+    return true;
   }
 
   // Call from a click handler: the browser requires a user gesture for both the
@@ -259,7 +270,13 @@ export class VoiceSession {
     }
 
     if (message.toolCall?.functionCalls?.length) {
-      void this.runToolCalls(message.toolCall.functionCalls);
+      // One queue for the whole conversation. Calls can arrive in separate
+      // messages while an earlier batch is still waiting on the server, and
+      // "reject, then suggest again" must never overlap with what came before.
+      const calls = message.toolCall.functionCalls;
+      this.toolQueue = this.toolQueue.then(() => this.runToolCalls(calls)).catch((error) => {
+        console.error('[voice] tool queue failed', error);
+      });
     }
 
     const content = message.serverContent;

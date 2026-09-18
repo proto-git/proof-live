@@ -106,10 +106,15 @@ async function run(): Promise<void> {
   assertEqual(h.requests[0].headers['X-Agent-Id'], 'gemini-live', 'presence header');
   assertEqual(h.requests[0].headers['x-share-token'], 'tok', 'share token header');
 
-  // "Yes" with no ids accepts the agent's latest batch only.
-  h.pending = [pendingMark('m1', 'Old line', 'New line'), pendingMark('human-1', 'Other', 'Else')];
-  assertEqual(await h.runner.run('accept_suggestions', {}), { accepted: 1, requested: 1 }, 'accept defaults to latest batch');
-  assertEqual(h.accepted, ['m1'], 'only the agent batch was accepted');
+  // "Yes" with no ids accepts everything the agent has pending, across turns,
+  // and leaves other people's suggestions alone.
+  h.pending = [
+    pendingMark('m1', 'Old line', 'New line'),
+    pendingMark('earlier-turn', 'Third', 'Fourth'),
+    { ...pendingMark('human-1', 'Other', 'Else'), by: 'human:Sam' } as Mark,
+  ];
+  assertEqual(await h.runner.run('accept_suggestions', {}), { accepted: 2, requested: 2 }, 'accept defaults to all agent suggestions');
+  assertEqual(h.accepted, ['m1', 'earlier-turn'], 'other authors were left alone');
 
   // "Try again": reject latest batch, then the next suggestion starts a new batch.
   h = createHarness();
