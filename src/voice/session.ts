@@ -189,8 +189,10 @@ export class VoiceSession {
       }
       this.refreshState();
     } catch (error) {
-      // A cancelled start was already torn down and set to idle by stop().
-      if (error instanceof StartCancelled) return;
+      // A cancelled start was already torn down and set to idle by stop(). That
+      // includes a rejection from a pending await (token, socket, microphone)
+      // that lands after stop() without passing through assertCurrent().
+      if (error instanceof StartCancelled || epoch !== this.epoch) return;
       await this.teardown();
       this.setState('error', describeStartError(error));
       throw error;

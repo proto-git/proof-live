@@ -182,6 +182,17 @@ async function run(): Promise<void> {
   assertEqual(h.session.getState(), 'idle', 'stays idle after a cancelled start');
   assertEqual(h.states.includes('error'), false, 'a cancelled start is not reported as an error');
 
+  // End pressed, then the pending token request fails. The failure belongs to a
+  // start that no longer exists, so it must not surface as an error.
+  h = createHarness();
+  started = h.session.start();
+  await settle();
+  await h.session.stop();
+  h.pendingTokens[0].reject(new Error('network down'));
+  await started;
+  assertEqual(h.session.getState(), 'idle', 'idle after a failure that lands after stop');
+  assertEqual(h.states.includes('error'), false, 'a failure after stop is not reported as an error');
+
   // End pressed while the socket is opening: it is closed the moment it arrives.
   h = createHarness();
   started = h.session.start();

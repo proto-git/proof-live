@@ -30,6 +30,10 @@ ${PARAGRAPH}
 The remaining text is here so the selection has neighbours.
 `;
 
+if (process.env.PROOF_SMOKE_SLUG && !process.env.PROOF_SMOKE_TOKEN) {
+  console.error('PROOF_SMOKE_TOKEN is required with PROOF_SMOKE_SLUG: minting a voice token needs an edit token');
+  process.exit(1);
+}
 if (!SHARE_KEY && !process.env.PROOF_SMOKE_SLUG) {
   console.error('PROOF_SHARE_MARKDOWN_API_KEY is required');
   process.exit(1);
@@ -52,7 +56,7 @@ async function main() {
 
   // Reuse a document (for example one a browser has open) instead of creating one.
   const doc = process.env.PROOF_SMOKE_SLUG
-    ? { slug: process.env.PROOF_SMOKE_SLUG, accessToken: process.env.PROOF_SMOKE_TOKEN || '', accessRole: 'reused', tokenUrl: `${BASE}/d/${process.env.PROOF_SMOKE_SLUG}?token=${process.env.PROOF_SMOKE_TOKEN}` }
+    ? { slug: process.env.PROOF_SMOKE_SLUG, accessToken: process.env.PROOF_SMOKE_TOKEN || '', accessRole: 'reused', tokenUrl: `${BASE}/d/${process.env.PROOF_SMOKE_SLUG}` }
     : await post('/api/share/markdown', { title: 'Voice smoke test', markdown: MARKDOWN }, { 'x-api-key': SHARE_KEY });
   const slug: string = doc.slug;
   const shareToken: string = doc.accessToken;
@@ -101,7 +105,9 @@ async function main() {
           }).catch((error: Error) => ({ success: false, error: error.message }));
           if (result.success) {
             rejected++;
-            suggestionIds.splice(suggestionIds.indexOf(id), 1);
+            // ids come from the model and may not be ones this run created.
+            const index = suggestionIds.indexOf(id);
+            if (index >= 0) suggestionIds.splice(index, 1);
             rejectedIds.push(id);
           } else console.log(`${stamp()}   reject ${id} failed: ${result.error}`);
         }
