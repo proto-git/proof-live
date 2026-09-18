@@ -30,7 +30,7 @@ ${PARAGRAPH}
 The remaining text is here so the selection has neighbours.
 `;
 
-if (!SHARE_KEY) {
+if (!SHARE_KEY && !process.env.PROOF_SMOKE_SLUG) {
   console.error('PROOF_SHARE_MARKDOWN_API_KEY is required');
   process.exit(1);
 }
@@ -50,7 +50,10 @@ async function main() {
   const t0 = Date.now();
   const stamp = () => `+${((Date.now() - t0) / 1000).toFixed(1)}s`;
 
-  const doc = await post('/api/share/markdown', { title: 'Voice smoke test', markdown: MARKDOWN }, { 'x-api-key': SHARE_KEY });
+  // Reuse a document (for example one a browser has open) instead of creating one.
+  const doc = process.env.PROOF_SMOKE_SLUG
+    ? { slug: process.env.PROOF_SMOKE_SLUG, accessToken: process.env.PROOF_SMOKE_TOKEN || '', accessRole: 'reused', tokenUrl: `${BASE}/d/${process.env.PROOF_SMOKE_SLUG}?token=${process.env.PROOF_SMOKE_TOKEN}` }
+    : await post('/api/share/markdown', { title: 'Voice smoke test', markdown: MARKDOWN }, { 'x-api-key': SHARE_KEY });
   const slug: string = doc.slug;
   const shareToken: string = doc.accessToken;
   console.log(`${stamp()} document ${slug} (${doc.accessRole})`);

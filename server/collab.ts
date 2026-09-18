@@ -1312,6 +1312,17 @@ function attachAuthenticatedCollabPresence(socketId: string, auth: CollabAuthCon
       const timer = setInterval(() => {
         try {
           noteDocumentLiveCollabLease(auth.slug, auth.accessEpoch as number);
+          // The connection row expires on the same TTL as the lease. Without
+          // this refresh, a tab open for longer than the TTL leaves a live lease
+          // with no epoch-matching connection, which hosted runtimes treat as a
+          // remote replica holding the document and reject every write.
+          upsertActiveCollabConnection({
+            connectionId,
+            slug: auth.slug,
+            role: auth.role,
+            accessEpoch: auth.accessEpoch as number,
+            instanceId: ACTIVE_COLLAB_INSTANCE_ID,
+          });
         } catch {
           // best-effort heartbeat
         }
