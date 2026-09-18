@@ -67,7 +67,7 @@ const BLOCK_ANCHOR_REQUIRED =
   'A new paragraph, section, or list has to be anchored on a whole paragraph or a whole heading, quoted in full. Call get_document, pick the paragraph or heading next to where the new content belongs, and pass position "before" or "after".';
 
 const LIST_ANCHOR_REFUSED =
-  'New blocks cannot be anchored on a list item. To add content after a list, anchor on the heading or paragraph that follows the list and pass position "before". To add an item to the list itself, use suggest_replace on the last item with both items as the replacement.';
+  'A whole list cannot be the anchor. To add content after a list, quote its last item in full and pass position "after"; the new content is placed below the list. To add content above a list, quote its first item and pass position "before". To add an item to the list itself, use suggest_replace on the last item with both items as the replacement.';
 
 // Content that introduces its own block: a heading, a list, a quote, a fenced
 // block (a Mermaid diagram), an image on its own, or more than one paragraph.
@@ -96,15 +96,18 @@ function blockPlainText(raw: string): string {
     .trim();
 }
 
-function findWholeBlock(markdown: string, anchor: string): { raw: string; kind: 'paragraph' | 'heading' | 'list' } | null {
+function findWholeBlock(markdown: string, anchor: string): { raw: string; kind: 'paragraph' | 'heading' | 'list' | 'list-item' } | null {
   const wanted = anchor.replace(/(\*\*|__|\*|_|~~|`)/g, '').replace(/\s+/g, ' ').trim();
   for (const chunk of markdown.split(/\n\s*\n/)) {
     const raw = chunk.trim();
     if (!raw) continue;
     const listLike = raw.split('\n').some((line) => /^\s{0,3}(?:[-*+]\s|\d+[.)]\s|>)/.test(line));
     if (listLike) {
-      // A quote that names one item of a list still has to be reported as a list.
-      if (raw.split('\n').some((line) => blockPlainText(line) === wanted) || blockPlainText(raw) === wanted) return { raw, kind: 'list' };
+      // One whole item can anchor a new block: the editor places the block outside
+      // the list (after it, or before it). The list as a whole cannot be quoted.
+      const item = raw.split('\n').find((line) => blockPlainText(line) === wanted);
+      if (item) return { raw: item.replace(BLOCK_PREFIX, '').trim(), kind: 'list-item' };
+      if (blockPlainText(raw) === wanted) return { raw, kind: 'list' };
       continue;
     }
     if (blockPlainText(raw) === wanted) return { raw, kind: /^\s{0,3}#{1,6}\s/.test(raw) ? 'heading' : 'paragraph' };

@@ -289,7 +289,14 @@ export class VoiceSession {
     const content = message.serverContent;
     if (!content) return;
 
-    if (content.interrupted) this.player.flush();
+    // Kept on purpose, like the tool log. An agent that repeats itself was usually
+    // interrupted, and what it "heard" says by whom: its own words here mean the
+    // microphone is picking up the speakers.
+    if (content.interrupted) {
+      console.log('[voice] interrupted: the agent was cut off mid-reply');
+      this.player.flush();
+    }
+    if (content.inputTranscription?.text) console.log('[voice] heard', JSON.stringify(content.inputTranscription.text));
 
     for (const part of content.modelTurn?.parts ?? []) {
       const data = part.inlineData?.data;

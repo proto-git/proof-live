@@ -68,6 +68,7 @@ import {
 } from './metrics.js';
 import { canonicalizeStoredMarks, type StoredMark } from '../src/formats/marks.js';
 import { refreshSnapshotForSlug } from './snapshot.js';
+import { backupBeforeCollapse } from './projection-backup.js';
 import { isShareRole, type ShareRole, type ShareState } from './share-types.js';
 import { getEffectiveShareStateForRole } from './share-access.js';
 import {
@@ -3273,6 +3274,7 @@ function materializeProjection(
     return;
   }
   lastProjectionLengths.set(slug, markdownText.length);
+  backupBeforeCollapse(slug, markdownText);
   const marks = recoveredSnapshot.marks;
   const yStateVersion = getLatestYStateVersion(slug);
   if (options?.bumpRevision === false) {
