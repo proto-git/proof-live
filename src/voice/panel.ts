@@ -4,6 +4,7 @@
 
 import { VoiceSession, type VoiceState } from './session';
 import type { VoiceEditorApi } from './tools';
+import { VoiceTape, type TapeMode } from './tape';
 
 interface LiveStatus {
   configured: boolean;
@@ -28,6 +29,16 @@ const STATE_LABEL: Record<VoiceState, string> = {
   error: 'Voice unavailable',
 };
 
+const TAPE_MODE: Record<VoiceState, TapeMode> = {
+  idle: 'off',
+  connecting: 'connecting',
+  listening: 'listening',
+  speaking: 'speaking',
+  working: 'working',
+  reconnecting: 'connecting',
+  error: 'off',
+};
+
 const MIC_ICON =
   '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
 const MUTED_ICON =
@@ -46,19 +57,19 @@ const STYLE = `
   flex-direction: column;
   align-items: center;
   gap: 10px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--pl-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
   pointer-events: none;
 }
 .voice-dock > * { pointer-events: auto; }
 .voice-pill {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   padding: 5px;
   border-radius: 999px;
-  background: #16181d;
-  color: #f4f5f7;
-  box-shadow: 0 6px 24px rgba(12, 14, 20, 0.22), 0 1px 2px rgba(12, 14, 20, 0.3);
+  background: var(--pl-ink, #15171C);
+  color: var(--pl-text-on-ink, #F4F5F7);
+  box-shadow: var(--pl-shadow-float, 0 1px 2px rgba(21, 23, 28, 0.2), 0 8px 28px rgba(21, 23, 28, 0.18));
 }
 .voice-btn {
   all: unset;
@@ -79,58 +90,100 @@ const STYLE = `
   transition: background 120ms ease;
 }
 .voice-btn:hover { background: rgba(255, 255, 255, 0.1); }
-.voice-btn:focus-visible { outline: 2px solid #8ab4ff; outline-offset: 2px; }
+.voice-btn:focus-visible { outline: 2px solid var(--pl-human-on-ink, #8FB0FF); outline-offset: 2px; }
 .voice-btn[disabled] { cursor: default; opacity: 0.55; }
 .voice-btn[disabled]:hover { background: none; }
-.voice-main { padding: 0 16px 0 12px; }
+.voice-main { padding: 0 14px 0 12px; }
+.voice-end:hover { background: rgba(255, 138, 138, 0.16); color: var(--pl-danger-on-ink, #FF8A8A); }
+
+/* Idle: a microphone. Live: a dot in the colour of whoever has the floor
+   (blue for the author, orange for the agent), so the microphone icon appears
+   once, on the mute button. */
 .voice-orb {
-  position: relative;
-  width: 26px;
-  height: 26px;
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
 }
-.voice-orb::before {
+.voice-dock[data-live="true"] .voice-orb svg { display: none; }
+.voice-dock[data-live="true"] .voice-orb::before {
   content: "";
-  position: absolute;
-  inset: 0;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--voice-accent, transparent);
-  opacity: 0.28;
-  transform: scale(var(--voice-level, 1));
-  transition: transform 90ms linear, background 200ms ease;
+  background: var(--pl-text-on-ink-muted, #A9AFBA);
+  transition: background 200ms ease;
 }
-.voice-dock[data-state="listening"] { --voice-accent: #6ee7b7; }
-.voice-dock[data-state="speaking"] { --voice-accent: #a5b4fc; }
-.voice-dock[data-state="working"] { --voice-accent: #fcd34d; }
+.voice-dock[data-floor="human"] .voice-orb::before { background: var(--pl-human-on-ink, #8FB0FF); }
+.voice-dock[data-floor="agent"] .voice-orb::before { background: var(--pl-agent-on-ink, #FF9A52); }
+.voice-dock[data-muted="true"] .voice-orb::before {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--pl-text-on-ink-muted, #A9AFBA);
+}
 .voice-dock[data-state="connecting"] .voice-orb::before,
 .voice-dock[data-state="reconnecting"] .voice-orb::before,
 .voice-dock[data-state="working"] .voice-orb::before {
-  background: var(--voice-accent, #9aa3b2);
   animation: voice-pulse 1.1s ease-in-out infinite;
 }
 @keyframes voice-pulse {
-  0%, 100% { transform: scale(0.85); opacity: 0.2; }
-  50% { transform: scale(1.35); opacity: 0.4; }
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
 }
+.voice-label { min-width: 68px; }
+.voice-dock[data-live="false"] .voice-label { min-width: 0; }
+.voice-time {
+  color: var(--pl-text-on-ink-muted, #A9AFBA);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.voice-tape {
+  display: block;
+  width: 168px;
+  height: 28px;
+  margin: 0 8px 0 0;
+  padding-left: 10px;
+  box-sizing: content-box;
+  border-left: 1px solid var(--pl-line-on-ink, rgba(255, 255, 255, 0.14));
+}
+.voice-dock[data-live="false"] .voice-tape,
+.voice-dock[data-live="false"] .voice-time { display: none; }
+
+/* What is being said, and by whom. */
 .voice-caption {
-  max-width: min(560px, calc(100vw - 48px));
-  padding: 8px 14px;
-  border-radius: 12px;
-  background: rgba(22, 24, 29, 0.92);
-  color: #f4f5f7;
-  font-size: 14px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: baseline;
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 32px));
+  padding: 10px 14px 10px 13px;
+  border-radius: var(--pl-radius-card, 14px);
+  border-left: 3px solid var(--voice-who, transparent);
+  background: var(--pl-ink, #15171C);
+  color: var(--pl-text-on-ink, #F4F5F7);
+  font-size: 15px;
   line-height: 1.45;
-  text-align: center;
-  box-shadow: 0 6px 24px rgba(12, 14, 20, 0.18);
+  text-align: left;
+  box-shadow: var(--pl-shadow-float, 0 1px 2px rgba(21, 23, 28, 0.2), 0 8px 28px rgba(21, 23, 28, 0.18));
+  animation: voice-caption-in 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes voice-caption-in {
+  from { opacity: 0; transform: translateY(4px); }
 }
 .voice-caption[hidden] { display: none; }
-.voice-caption[data-speaker="author"] { color: #c9ced8; font-style: italic; }
-.voice-caption[data-tone="error"] { background: #7f1d1d; }
+.voice-caption[data-speaker="author"] { --voice-who: var(--pl-human-on-ink, #8FB0FF); }
+.voice-caption[data-speaker="agent"] { --voice-who: var(--pl-agent-on-ink, #FF9A52); }
+.voice-caption[data-tone="error"] { --voice-who: var(--pl-danger-on-ink, #FF8A8A); }
+.voice-caption-who { color: var(--voice-who); font-size: 12px; font-weight: 600; white-space: nowrap; }
+@media (max-width: 480px) {
+  .voice-tape { width: 88px; }
+  .voice-time { display: none; }
+  .voice-label { min-width: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
   .voice-orb::before { transition: none; animation: none !important; }
+  .voice-caption { animation: none; }
 }
 @media print { .voice-dock { display: none; } }
 `;
@@ -145,6 +198,15 @@ export class VoicePanel {
   private readonly muteButton = document.createElement('button');
   private readonly endButton = document.createElement('button');
   private readonly caption = document.createElement('div');
+  private readonly captionWho = document.createElement('span');
+  private readonly captionBody = document.createElement('span');
+  private readonly time = document.createElement('span');
+  private readonly tapeCanvas = document.createElement('canvas');
+  private readonly tape = new VoiceTape(this.tapeCanvas, (floor) => {
+    this.dock.dataset.floor = floor;
+  });
+  private liveSince: number | null = null;
+  private clock: number | null = null;
   private session: VoiceSession | null = null;
   private captionSpeaker: 'author' | 'agent' | null = null;
   private captionText = '';
@@ -171,6 +233,8 @@ export class VoicePanel {
     this.caption.className = 'voice-caption';
     this.caption.hidden = true;
     this.caption.setAttribute('aria-live', 'polite');
+    this.captionWho.className = 'voice-caption-who';
+    this.caption.append(this.captionWho, this.captionBody);
 
     const pill = document.createElement('div');
     pill.className = 'voice-pill';
@@ -180,21 +244,27 @@ export class VoicePanel {
     const orb = document.createElement('span');
     orb.className = 'voice-orb';
     orb.innerHTML = MIC_ICON;
-    this.mainButton.append(orb, this.mainLabel);
+    this.mainLabel.className = 'voice-label';
+    this.time.className = 'voice-time';
+    this.mainButton.append(orb, this.mainLabel, this.time);
     this.mainButton.addEventListener('click', () => void this.handleMainClick());
+
+    // Decorative: the state label and the caption carry the meaning.
+    this.tapeCanvas.className = 'voice-tape';
+    this.tapeCanvas.setAttribute('aria-hidden', 'true');
 
     this.muteButton.className = 'voice-btn';
     this.muteButton.type = 'button';
     this.muteButton.addEventListener('click', () => this.toggleMute());
 
-    this.endButton.className = 'voice-btn';
+    this.endButton.className = 'voice-btn voice-end';
     this.endButton.type = 'button';
     this.endButton.innerHTML = END_ICON;
     this.endButton.setAttribute('aria-label', 'End voice session');
     this.endButton.title = 'End voice session';
     this.endButton.addEventListener('click', () => void this.end());
 
-    pill.append(this.mainButton, this.muteButton, this.endButton);
+    pill.append(this.mainButton, this.tapeCanvas, this.muteButton, this.endButton);
     this.dock.append(this.caption, pill);
     document.body.appendChild(this.dock);
 
@@ -254,12 +324,18 @@ export class VoicePanel {
     if (!this.session) return;
     this.session.setMuted(!this.session.isMuted());
     this.renderMute();
+    // The label is the only place a muted microphone is spelled out.
+    this.render((this.dock.dataset.state as VoiceState) || 'idle');
   }
 
   private render(state: VoiceState, detail?: string): void {
     this.dock.dataset.state = state;
     const live = state !== 'idle' && state !== 'error';
-    this.mainLabel.textContent = STATE_LABEL[state];
+    const muted = live && (this.session?.isMuted() ?? false);
+    this.dock.dataset.live = String(live);
+    this.mainLabel.textContent = muted && state === 'listening' ? 'Muted' : STATE_LABEL[state];
+    this.tape.setMode(live ? TAPE_MODE[state] : 'off');
+    this.renderClock(live);
     this.mainButton.setAttribute('aria-label', live ? `Voice editing: ${STATE_LABEL[state]}` : 'Start voice editing');
     this.muteButton.hidden = !live;
     this.endButton.hidden = !live;
@@ -281,12 +357,32 @@ export class VoicePanel {
     this.muteButton.setAttribute('aria-label', muted ? 'Unmute microphone' : 'Mute microphone');
     this.muteButton.setAttribute('aria-pressed', String(muted));
     this.muteButton.title = muted ? 'Unmute microphone' : 'Mute microphone';
+    this.dock.dataset.muted = String(muted);
+    this.tape.setMuted(muted);
   }
 
+  // Microphone RMS from the capture worklet, about ten times a second.
   private renderLevel(level: number): void {
-    // Speech RMS sits around 0.02 to 0.2; map that onto a gentle 1x to 1.7x swell.
-    const scale = 1 + Math.min(0.7, level * 5);
-    this.dock.style.setProperty('--voice-level', scale.toFixed(2));
+    this.tape.setAuthorLevel(level);
+  }
+
+  // How long the conversation has been live.
+  private renderClock(live: boolean): void {
+    if (!live) {
+      if (this.clock !== null) window.clearInterval(this.clock);
+      this.clock = null;
+      this.liveSince = null;
+      this.time.textContent = '';
+      return;
+    }
+    if (this.clock !== null) return;
+    this.liveSince = Date.now();
+    const tick = () => {
+      const seconds = Math.floor((Date.now() - (this.liveSince ?? Date.now())) / 1000);
+      this.time.textContent = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    };
+    tick();
+    this.clock = window.setInterval(tick, 1000);
   }
 
   private renderTranscript(speaker: 'author' | 'agent', text: string, final: boolean): void {
@@ -309,7 +405,8 @@ export class VoicePanel {
     this.caption.dataset.speaker = speaker;
     if (tone) this.caption.dataset.tone = tone;
     else delete this.caption.dataset.tone;
-    this.caption.textContent = text;
+    this.captionWho.textContent = tone === 'error' ? 'Voice' : speaker === 'author' ? 'You' : 'Agent';
+    this.captionBody.textContent = text;
     if (tone === 'error') this.scheduleCaptionHide(8000);
   }
 
