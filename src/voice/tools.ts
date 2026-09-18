@@ -170,6 +170,19 @@ export class VoiceToolRunner {
   }
 
   private async addSuggestion(op: { kind: 'replace' | 'insert' | 'delete'; quote: string; content?: string }): Promise<ToolResult> {
+    // Two pending suggestions on the same text cannot both be shown: the editor
+    // renders one suggestion mark per range and thrashes when two compete. Make
+    // the model resolve the existing one first instead of stacking a new one.
+    const overlapping = this.context.editor
+      .getPendingMarkSuggestions()
+      .find((mark) => mark.quote && (mark.quote.includes(op.quote) || op.quote.includes(mark.quote)));
+    if (overlapping) {
+      return {
+        error: `That text already has a pending suggestion (id ${overlapping.id}). Call reject_suggestions or accept_suggestions with that id first, then suggest again.`,
+        pending_id: overlapping.id,
+      };
+    }
+
     const result = await this.postOp({ type: 'suggestion.add', ...op });
     if (!result.ok) return { error: result.error };
     if (!this.batchOpen) {

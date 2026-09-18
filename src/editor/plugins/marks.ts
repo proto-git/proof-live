@@ -1760,6 +1760,16 @@ export function applyRemoteMarks(
         continue;
       }
 
+      // A mark type excludes itself, so adding a second mark of the same type
+      // over a range that already carries one evicts the first. On the next
+      // pass the evicted mark has no anchor and is re-added, evicting this one,
+      // and the two ping-pong on every transaction. Leave the range as it is
+      // and let the failure backoff hold this mark until the document changes.
+      if (markTypeName === 'suggestion' && tr.doc.rangeHasMark(range.from, range.to, markType)) {
+        recordMarkAnchorHydrationFailure(id, tr.doc, now);
+        continue;
+      }
+
       const attrs: Record<string, unknown> = { id, by: stored.by || 'unknown' };
       if (markTypeName === 'suggestion') {
         attrs.kind = stored.kind;

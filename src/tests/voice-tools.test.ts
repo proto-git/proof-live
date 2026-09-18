@@ -136,6 +136,20 @@ async function run(): Promise<void> {
   h.pending = [pendingMark('m1', 'A', 'a'), pendingMark('m2', 'B', '')];
   assertEqual(await h.runner.run('accept_suggestions', {}), { accepted: 2, requested: 2 }, 'batch of two accepted together');
 
+  // A second suggestion on text that already has a pending one is refused, so
+  // the model resolves the first instead of stacking marks the editor cannot show.
+  h = createHarness();
+  h.pending = [pendingMark('m1', 'Old line here', 'Attempt one')];
+  const stacked = await h.runner.run('suggest_replace', { quote: 'Old line', replacement: 'Attempt two' });
+  assertEqual((stacked as { pending_id?: string }).pending_id, 'm1', 'overlapping suggestion names the pending mark');
+  assertEqual(h.requests.length, 0, 'overlapping suggestion made no request');
+  assertEqual(await h.runner.run('reject_suggestions', { ids: ['m1'] }), { rejected: 1, requested: 1 }, 'reject clears the way');
+  assertEqual(
+    await h.runner.run('suggest_replace', { quote: 'Old line', replacement: 'Attempt two' }),
+    { ok: true, id: 'm1', status: 'pending author review' },
+    'suggestion allowed once the range is free',
+  );
+
   // all=true sweeps everything pending, including other authors' suggestions.
   h = createHarness();
   h.pending = [pendingMark('x', 'A', 'a'), pendingMark('y', 'B', 'b')];
