@@ -46,6 +46,66 @@
       --text-align: left;
     }
 
+    /* Chrome tokens (--pl-*). They sit beside the theme variables above and do
+       not replace them: themes style the document, these style the controls
+       around it. Components that inject their own styles read them with a
+       literal fallback. Two signal colours only, and they mean authorship:
+       blue for the person, orange for the agent. */
+    :root {
+      --pl-human: #2346C7;
+      --pl-human-wash: #EAF0FF;
+      --pl-human-on-ink: #8FB0FF;
+      --pl-agent: #B4430A;
+      --pl-agent-signal: #E8590C;
+      --pl-agent-wash: #FFF1E6;
+      --pl-agent-on-ink: #FF9A52;
+
+      --pl-paper: #F7F6F3;
+      --pl-paper-raised: #FFFFFF;
+      --pl-ink: #15171C;
+      --pl-ink-raised: #23262E;
+      --pl-text: #1B1D22;
+      --pl-text-muted: #5C6370;
+      --pl-text-on-ink: #F4F5F7;
+      --pl-text-on-ink-muted: #A9AFBA;
+      --pl-line: rgba(21, 23, 28, 0.10);
+      --pl-line-strong: rgba(21, 23, 28, 0.18);
+      --pl-line-on-ink: rgba(255, 255, 255, 0.14);
+
+      --pl-insert: #15803D;
+      --pl-delete: #B42318;
+      --pl-danger-on-ink: #FF8A8A;
+      --pl-focus: #2346C7;
+
+      --pl-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+      --pl-radius-chip: 5px;
+      --pl-radius-control: 9px;
+      --pl-radius-card: 14px;
+      --pl-radius-pill: 999px;
+
+      --pl-shadow-float: 0 1px 2px rgba(21, 23, 28, 0.20), 0 8px 28px rgba(21, 23, 28, 0.18);
+      --pl-shadow-card: 0 0 0 1px var(--pl-line), 0 2px 8px rgba(21, 23, 28, 0.06);
+
+      --pl-ease: cubic-bezier(0.2, 0, 0, 1);
+      --pl-dur-fast: 120ms;
+      --pl-dur-move: 200ms;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      :root {
+        --pl-dur-fast: 0ms;
+        --pl-dur-move: 0ms;
+      }
+    }
+
+    /* One focus ring for every control. :where() keeps this at zero specificity
+       so a component can still choose its own (the dark dock uses a lighter blue). */
+    :where(button, [role="button"], a, input, select, textarea, [tabindex]):focus-visible {
+      outline: 2px solid var(--pl-focus);
+      outline-offset: 2px;
+    }
+
     /* Whitey Theme - Based on Typora Whitey Theme */
     :root[data-theme="whitey"] {
       --bg-color: #fefefe;
@@ -869,7 +929,7 @@
       box-shadow: 0 6px 16px rgba(15, 23, 42, 0.2);
     }
     .markdown-link-action-card-open:focus-visible {
-      outline: 2px solid #0ea5e9;
+      outline: 2px solid var(--pl-focus);
       outline-offset: 2px;
     }
     .markdown-link-action-card[data-armed="true"] .markdown-link-action-card-open {
