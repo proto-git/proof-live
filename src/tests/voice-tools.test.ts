@@ -115,6 +115,16 @@ async function run(): Promise<void> {
   assertEqual(h.requests[0].headers['X-Agent-Id'], 'gemini-live', 'presence header');
   assertEqual(h.requests[0].headers['x-share-token'], 'tok', 'share token header');
 
+  // The agent may not accept what the author has not seen: a suggestion made in
+  // this turn stays pending until the author has spoken again.
+  assertEqual(
+    (await h.runner.run('accept_suggestions', {})).waiting_for_author,
+    1,
+    'a suggestion made this turn cannot be accepted this turn',
+  );
+  assertEqual(h.accepted, [], 'nothing was accepted before the author saw it');
+  h.runner.endBatch(); // the author speaks
+
   // "Yes" with no ids accepts everything the agent has pending, across turns,
   // and leaves other people's suggestions alone.
   h.pending = [
@@ -139,6 +149,7 @@ async function run(): Promise<void> {
   h.nextResponse = { status: 200, body: { success: true, markId: 'm2' } };
   await h.runner.run('suggest_replace', { quote: 'Old line', replacement: 'Attempt two' });
   h.pending = [pendingMark('m2', 'Old line', 'Attempt two')];
+  h.runner.endBatch();
   await h.runner.run('accept_suggestions', {});
   assertEqual(h.accepted, ['m2'], 'new batch replaced the rejected one');
 
@@ -148,6 +159,7 @@ async function run(): Promise<void> {
   h.nextResponse = { status: 200, body: { success: true, markId: 'm2' } };
   await h.runner.run('suggest_delete', { quote: 'B' });
   h.pending = [pendingMark('m1', 'A', 'a'), pendingMark('m2', 'B', '')];
+  h.runner.endBatch();
   assertEqual(await h.runner.run('accept_suggestions', {}), { accepted: 2, requested: 2 }, 'batch of two accepted together');
 
   // A second suggestion on text that already has a pending one is refused, so

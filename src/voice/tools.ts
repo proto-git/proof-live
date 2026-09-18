@@ -146,6 +146,9 @@ export class VoiceToolRunner {
   // without the model having to track ids.
   private recentSuggestionIds: string[] = [];
   private batchOpen = false;
+  // Suggestions made since the author last spoke. The author has not had a
+  // chance to look at these, so the agent may not accept them yet.
+  private unseenSuggestionIds = new Set<string>();
 
   constructor(private readonly context: VoiceToolContext) {}
 
@@ -153,6 +156,7 @@ export class VoiceToolRunner {
   // suggestion then starts a fresh batch rather than extending the old one.
   endBatch(): void {
     this.batchOpen = false;
+    this.unseenSuggestionIds.clear();
   }
 
   async run(name: string, args: Record<string, unknown>): Promise<ToolResult> {
@@ -361,7 +365,10 @@ export class VoiceToolRunner {
       this.recentSuggestionIds = [];
       this.batchOpen = true;
     }
-    if (result.markId) this.recentSuggestionIds.push(result.markId);
+    if (result.markId) {
+      this.recentSuggestionIds.push(result.markId);
+      this.unseenSuggestionIds.add(result.markId);
+    }
     this.revealWhenSynced(result.markId);
     return { ok: true, id: result.markId, status: 'pending author review' };
   }
@@ -445,6 +452,22 @@ export class VoiceToolRunner {
       // batch). "Try again" is about the latest attempt only.
       const latest = this.recentSuggestionIds.filter((id) => pending.has(id));
       targets = verb === 'accepted' || latest.length === 0 ? mine : latest;
+    }
+
+    // Accepting is the author's decision. A suggestion created in this same turn
+    // was never in front of them, whatever they said before it existed.
+    if (verb === 'accepted') {
+      const unseen = targets.filter((id) => this.unseenSuggestionIds.has(id));
+      if (unseen.length > 0) {
+        targets = targets.filter((id) => !this.unseenSuggestionIds.has(id));
+        if (targets.length === 0) {
+          return {
+            accepted: 0,
+            waiting_for_author: unseen.length,
+            note: 'Those suggestions were only just made and the author has not seen them. Say what you suggested and wait for them to accept.',
+          };
+        }
+      }
     }
 
     if (targets.length === 0) return { [verb]: 0, note: 'There were no matching pending suggestions.' };
