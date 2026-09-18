@@ -24,6 +24,8 @@ interface Harness {
   nextResponse: { status: number; body: Record<string, unknown> };
   // When false, suggestions the server accepts never show up in the editor.
   marksSync: boolean;
+  // Overrides the editor's Markdown snapshot.
+  markdown?: string;
 }
 
 function createHarness(): Harness {
@@ -41,6 +43,7 @@ function createHarness(): Harness {
     getSelectionContext: () => harness.selection,
     getMarkdownSnapshot: () => ({
       content:
+        harness.markdown ??
         '# Title\n\n<span data-proof="suggestion" data-id="x">Old line</span>\n\n<!-- PROOF\n{"version":2}\n-->\n\n<!-- PROOF:END -->\n',
     }),
     getPendingMarkSuggestions: () => harness.pending,
@@ -311,6 +314,49 @@ async function run(): Promise<void> {
   h = createHarness();
   await h.runner.run('suggest_insert', { anchor_quote: 'Old line', content: '```mermaid\ngraph TD\n  A --> B\n```' });
   assertEqual(h.requests[0].body.content, 'Old line\n\n```mermaid\ngraph TD\n  A --> B\n```', 'a fenced block is inserted as its own block');
+
+  // Editing a diagram that is already there. Whatever shape the model sends, the
+  // suggestion is "the whole block, replaced by a whole fenced block": unfenced
+  // code is parsed as prose on accept and the diagram falls apart.
+  const diagram = 'graph TD\n    A[Step] --> B[Reference]';
+  const diagramDoc = `# Title\n\nIntro.\n\n\`\`\`mermaid proof:W3sidHlw==\n${diagram}\n\`\`\`\n\nOutro.\n\n<!-- PROOF\n{"version":2}\n-->\n`;
+  h = createHarness();
+  h.markdown = diagramDoc;
+  assertEqual(
+    (await h.runner.run('get_document', {})).markdown,
+    `# Title\n\nIntro.\n\n\`\`\`mermaid\n${diagram}\n\`\`\`\n\nOutro.`,
+    'the model never sees the provenance on a code fence',
+  );
+  const recoloured = `${diagram}\n\n    style A fill:#dbeafe`;
+  await h.runner.run('suggest_replace', { quote: diagram, replacement: recoloured });
+  assertEqual(
+    [h.requests[0].body.quote, h.requests[0].body.content],
+    [diagram, `\`\`\`mermaid\n${recoloured}\n\`\`\``],
+    'raw replacement code is fenced again',
+  );
+
+  h = createHarness();
+  h.markdown = diagramDoc;
+  await h.runner.run('suggest_replace', { quote: `\`\`\`mermaid\ngraph TD\nA[Step] --> B[Reference]\n\`\`\``, replacement: `\`\`\`mermaid\n${recoloured}\n\`\`\`` });
+  assertEqual(
+    [h.requests[0].body.quote, h.requests[0].body.content],
+    [diagram, `\`\`\`mermaid\n${recoloured}\n\`\`\``],
+    'a fenced, loosely indented quote still targets the whole block, and the fence is not doubled',
+  );
+
+  h = createHarness();
+  h.markdown = diagramDoc;
+  await h.runner.run('suggest_replace', { quote: 'B[Reference]', replacement: 'B[Disclosed reference]' });
+  assertEqual(
+    [h.requests[0].body.quote, h.requests[0].body.content],
+    [diagram, '```mermaid\ngraph TD\n    A[Step] --> B[Disclosed reference]\n```'],
+    'a change to one label still replaces the whole block',
+  );
+
+  h = createHarness();
+  h.markdown = diagramDoc;
+  await h.runner.run('suggest_replace', { quote: 'Intro.', replacement: 'A better intro.' });
+  assertEqual(h.requests[0].body.content, 'A better intro.', 'prose next to a diagram is edited as before');
 
   // Images: generated on the server, then proposed like any other block insert.
   h = createHarness();

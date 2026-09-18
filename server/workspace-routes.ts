@@ -45,6 +45,7 @@ function toPlainMarkdown(markdown: string): string {
   return markdown
     .replace(/<!--\s*PROOF[\s\S]*$/, '')
     .replace(/<span data-proof="[^"]*"[^>]*>([\s\S]*?)<\/span>/g, '$1')
+    .replace(/^(\s*(?:`{3,}|~{3,})\S*) proof:\S+$/gm, '$1')
     .trimEnd();
 }
 
