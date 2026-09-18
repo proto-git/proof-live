@@ -1072,8 +1072,6 @@ class ProofEditorImpl implements ProofEditor {
   private shareBannerSyncLabelEl: HTMLElement | null = null;
   private shareBannerTitleEditing: boolean = false;
   private shareTitlePersistSeq: number = 0;
-  private shareLastStatusLabel: string = '';
-  private shareStatusTextVisibleUntilMs: number = 0;
   private shareStatusHideTimer: ReturnType<typeof setTimeout> | null = null;
   private shareWsUnsubscribe: (() => void) | null = null;
   private shareEventPollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -2772,7 +2770,7 @@ class ProofEditorImpl implements ProofEditor {
 
   private getSyncStatusTextLabel(label: string): string {
     const map: Record<string, string> = {
-      'Saved': 'Saved',
+      'Saved': 'Ready',
       'Saving...': 'Saving',
       'Syncing...': 'Syncing',
       'Connecting...': 'Connecting',
@@ -2782,29 +2780,7 @@ class ProofEditorImpl implements ProofEditor {
       'Document is no longer shared': 'Unshared',
       'Live sync unavailable': 'No sync',
     };
-    return map[label] ?? 'Saved';
-  }
-
-  private shouldShowStatusText(statusLabel: string): boolean {
-    const normalized = statusLabel.trim() || 'Saved';
-    const now = Date.now();
-
-    if (normalized !== this.shareLastStatusLabel) {
-      this.shareLastStatusLabel = normalized;
-      this.shareStatusTextVisibleUntilMs = now + 3_500;
-      if (this.shareStatusHideTimer) {
-        clearTimeout(this.shareStatusHideTimer);
-        this.shareStatusHideTimer = null;
-      }
-      this.shareStatusHideTimer = setTimeout(() => {
-        this.shareStatusHideTimer = null;
-        const label = document.querySelector('#share-banner .share-pill-status-inline .status-label') as HTMLElement | null;
-        if (label) label.style.display = 'none';
-      }, 3_550);
-      return true;
-    }
-
-    return now < this.shareStatusTextVisibleUntilMs;
+    return map[label] ?? 'Ready';
   }
 
   private getHumanCollaboratorAvatars(): Array<{ name: string; color: string; initial: string }> {
@@ -3380,9 +3356,10 @@ class ProofEditorImpl implements ProofEditor {
       this.shareBannerSyncDotEl.style.animation = '';
     }
 
-    const statusText = this.getSyncStatusTextLabel(syncStatus.label);
-    this.shareBannerSyncLabelEl.textContent = statusText;
-    this.shareBannerSyncLabelEl.style.display = this.shouldShowStatusText(statusText) ? '' : 'none';
+    // The label stays visible. A pulsing dot on its own reads as "something is
+    // stuck"; "Ready" next to it says the document is synced and listening.
+    this.shareBannerSyncLabelEl.textContent = this.getSyncStatusTextLabel(syncStatus.label);
+    this.shareBannerSyncLabelEl.style.display = '';
   }
 
   private renderShareBannerContent(banner: HTMLElement, otherViewerCount: number): void {
@@ -3408,20 +3385,9 @@ class ProofEditorImpl implements ProofEditor {
     this.closePresenceMenu();
     this.closeAgentMenu();
 
-    const wordmark = document.createElement('a');
-    wordmark.textContent = 'Proof';
-    wordmark.href = 'https://www.proofeditor.ai';
-    wordmark.target = '_blank';
-    wordmark.rel = 'noopener';
-    wordmark.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;min-height:44px;min-width:44px;padding:0 8px;border-radius:10px;font-weight:600;color:#333;font-size:13px;letter-spacing:-0.2px;flex-shrink:0;text-decoration:none;';
-
-    const separator = document.createElement('span');
-    separator.className = 'share-pill-sep';
-    separator.style.cssText = 'width:1px;height:16px;background:rgba(0,0,0,0.1);flex-shrink:0';
-
     const title = document.createElement('span');
     title.className = 'share-pill-title';
-    title.style.cssText = 'font-weight:500;color:#374151;font-size:13px;flex:1 1 auto;min-width:0;';
+    title.style.cssText = 'font-weight:500;color:#374151;font-size:13px;flex:1 1 auto;min-width:0;padding-left:8px;';
     this.shareBannerTitleEl = title;
     this.updateShareBannerTitleDisplay();
     this.setupTitleEditing(title);
@@ -3451,7 +3417,7 @@ class ProofEditorImpl implements ProofEditor {
 
     const shareBtn = this.createShareMenuButton();
 
-    banner.replaceChildren(wordmark, separator, title, syncStatusSep, syncStatusInline, avatars, agentSlot, shareBtn);
+    banner.replaceChildren(title, syncStatusSep, syncStatusInline, avatars, agentSlot, shareBtn);
     this.scheduleBannerLayoutUpdate();
   }
 
