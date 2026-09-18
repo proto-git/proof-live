@@ -9,6 +9,8 @@ export interface WorkspaceDocument {
   slug: string;
   title: string;
   updatedAt: string;
+  // The kind of file the document started as: md, mdx, or txt.
+  sourceType?: string;
 }
 
 export interface WorkspaceSidebarOptions {
@@ -43,17 +45,17 @@ const STYLE = `
   height: 40px;
   padding: 0 14px;
   border-radius: 999px;
-  background: #fff;
-  color: #374151;
-  font: 500 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--pl-paper-raised, #fff);
+  color: var(--pl-text, #1B1D22);
+  font: 500 13px/1 var(--pl-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
   box-shadow: 0 4px 18px rgba(12, 14, 20, 0.1), 0 0 0 1px rgba(12, 14, 20, 0.06);
   cursor: pointer;
   transition: background 120ms ease;
 }
-.workspace-toggle:hover { background: #f6f7f9; }
+.workspace-toggle:hover { background: var(--pl-paper, #F7F6F3); }
 .workspace-toggle:focus-visible,
 .workspace-sidebar button:focus-visible,
-.workspace-item:focus-visible { outline: 2px solid #4f7cff; outline-offset: 2px; }
+.workspace-item:focus-visible { outline: 2px solid var(--pl-focus, #2346C7); outline-offset: 2px; }
 .workspace-open .workspace-toggle { display: none; }
 
 .workspace-sidebar {
@@ -65,10 +67,10 @@ const STYLE = `
   width: ${WIDTH_PX}px;
   display: flex;
   flex-direction: column;
-  background: #fbfbfa;
-  border-right: 1px solid rgba(12, 14, 20, 0.08);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  color: #1f2430;
+  background: var(--pl-paper, #F7F6F3);
+  border-right: 1px solid var(--pl-line, rgba(21, 23, 28, 0.1));
+  font-family: var(--pl-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  color: var(--pl-text, #1B1D22);
   transform: translateX(-100%);
   transition: transform 180ms ease;
 }
@@ -81,7 +83,7 @@ const STYLE = `
   padding: 18px 12px 10px 18px;
 }
 .workspace-title { flex: 1; font-size: 13px; font-weight: 600; letter-spacing: 0.01em; }
-.workspace-count { color: #8a909c; font-weight: 500; margin-left: 6px; }
+.workspace-count { color: var(--pl-text-muted, #5C6370); font-weight: 500; margin-left: 6px; font-variant-numeric: tabular-nums; }
 .workspace-icon-btn {
   all: unset;
   box-sizing: border-box;
@@ -112,8 +114,8 @@ const STYLE = `
   box-shadow: 0 0 0 1px rgba(12, 14, 20, 0.1);
 }
 .workspace-btn:hover { background: #f3f4f6; }
-.workspace-btn[data-primary] { background: #16181d; color: #f4f5f7; box-shadow: none; }
-.workspace-btn[data-primary]:hover { background: #2a2d35; }
+.workspace-btn[data-primary] { flex: 1.5; background: var(--pl-ink, #15171C); color: var(--pl-text-on-ink, #F4F5F7); box-shadow: none; }
+.workspace-btn[data-primary]:hover { background: var(--pl-ink-raised, #23262E); }
 .workspace-btn[disabled] { opacity: 0.55; cursor: default; }
 
 .workspace-list { flex: 1; overflow-y: auto; padding: 2px 8px 16px 8px; }
@@ -124,19 +126,33 @@ const STYLE = `
   align-items: flex-start;
   gap: 9px;
   width: 100%;
-  padding: 8px 10px;
-  border-radius: 9px;
+  position: relative;
+  padding: 8px 10px 8px 12px;
+  border-radius: var(--pl-radius-control, 9px);
   cursor: pointer;
-  color: #374151;
+  color: var(--pl-text, #1B1D22);
 }
 .workspace-row { position: relative; }
-.workspace-remove { position: absolute; top: 7px; right: 6px; opacity: 0; background: #fbfbfa; }
+.workspace-row + .workspace-row { margin-top: 1px; }
+.workspace-remove { position: absolute; top: 7px; right: 6px; opacity: 0; background: var(--pl-paper, #F7F6F3); }
+.workspace-remove:hover { color: var(--pl-delete, #B42318); }
 .workspace-row:hover .workspace-remove, .workspace-remove:focus-visible { opacity: 1; }
 .workspace-row:hover .workspace-item { padding-right: 38px; }
-.workspace-item:hover { background: rgba(12, 14, 20, 0.05); }
-.workspace-item[aria-current="page"] { background: rgba(79, 124, 255, 0.12); color: #1b2a57; }
-.workspace-item svg { flex-shrink: 0; margin-top: 2px; color: #9aa1ad; }
-.workspace-item[aria-current="page"] svg { color: #4f7cff; }
+.workspace-item:hover { background: rgba(21, 23, 28, 0.05); }
+/* The open document: the author's blue, as a rule down the row's edge. */
+.workspace-item[aria-current="page"] { background: var(--pl-human-wash, #EAF0FF); cursor: default; }
+.workspace-item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--pl-human, #2346C7);
+}
+.workspace-item svg { flex-shrink: 0; margin-top: 2px; color: var(--pl-text-muted, #5C6370); opacity: 0.7; }
+.workspace-item[aria-current="page"] svg { color: var(--pl-human, #2346C7); opacity: 1; }
 .workspace-item-text { min-width: 0; flex: 1; }
 .workspace-item-title {
   font-size: 13px;
@@ -146,20 +162,85 @@ const STYLE = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.workspace-item-meta { margin-top: 2px; font-size: 11.5px; color: #8a909c; }
-.workspace-empty { padding: 18px 12px; font-size: 13px; line-height: 1.5; color: #6b7280; }
+.workspace-item-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--pl-text-muted, #5C6370); }
+/* The kind of file, as a small stamp. Colour is kept for authorship, so every type looks alike. */
+.workspace-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: var(--pl-radius-chip, 5px);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--pl-text-muted, #5C6370);
+  background: var(--pl-paper-raised, #fff);
+  box-shadow: inset 0 0 0 1px var(--pl-line-strong, rgba(21, 23, 28, 0.18));
+}
+.workspace-empty {
+  margin: 8px 6px;
+  padding: 20px 16px;
+  border: 1.5px dashed var(--pl-line-strong, rgba(21, 23, 28, 0.18));
+  border-radius: var(--pl-radius-card, 14px);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--pl-text-muted, #5C6370);
+}
+.workspace-empty strong { display: block; margin-bottom: 4px; color: var(--pl-text, #1B1D22); font-weight: 600; }
 .workspace-note {
   margin: 0 14px 10px 14px;
   padding: 8px 10px;
-  border-radius: 9px;
+  border-radius: var(--pl-radius-control, 9px);
   font-size: 12.5px;
   line-height: 1.4;
-  background: #eef2ff;
-  color: #273a7a;
+  background: var(--pl-paper-raised, #fff);
+  color: var(--pl-text, #1B1D22);
+  box-shadow: inset 0 0 0 1px var(--pl-line, rgba(21, 23, 28, 0.1));
 }
-.workspace-note[data-tone="error"] { background: #fdecec; color: #8a1f1f; }
+.workspace-note[data-tone="error"] { background: #fdecec; color: #8a1f1f; box-shadow: none; }
 .workspace-note[hidden] { display: none; }
-.workspace-drop .workspace-sidebar { box-shadow: inset 0 0 0 2px #4f7cff; }
+
+/* Removing: the row asks in place instead of raising a browser dialog. */
+.workspace-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 6px;
+  padding: 9px 8px 8px 12px;
+  border-radius: var(--pl-radius-control, 9px);
+  background: var(--pl-paper-raised, #fff);
+  box-shadow: inset 0 0 0 1px var(--pl-line-strong, rgba(21, 23, 28, 0.18));
+  font-size: 13px;
+}
+.workspace-confirm-text { flex: 1 0 100%; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-confirm .workspace-btn { flex: none; height: 28px; padding: 0 10px; font-size: 12px; }
+.workspace-confirm .workspace-btn[data-danger] { background: var(--pl-delete, #B42318); color: #fff; box-shadow: none; }
+.workspace-confirm .workspace-btn[data-danger]:hover { background: #8f1c13; }
+
+/* Files dragged over the drawer: say what will happen. */
+.workspace-list { position: relative; }
+.workspace-drop .workspace-list::after {
+  content: "Drop to import  (.md, .mdx, .txt)";
+  position: absolute;
+  inset: 4px 8px 8px 8px;
+  display: grid;
+  place-items: center;
+  border: 1.5px dashed var(--pl-human, #2346C7);
+  border-radius: var(--pl-radius-card, 14px);
+  background: color-mix(in srgb, var(--pl-human-wash, #EAF0FF) 94%, transparent);
+  color: var(--pl-human, #2346C7);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.workspace-foot {
+  padding: 10px 18px 14px 18px;
+  border-top: 1px solid var(--pl-line, rgba(21, 23, 28, 0.1));
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pl-text-muted, #5C6370);
+}
 
 /* Wide screens: the document moves over. Narrow screens: the drawer floats. */
 @media (min-width: 900px) {
@@ -172,6 +253,9 @@ const STYLE = `
 }
 @media (max-width: 899px) {
   .workspace-sidebar { box-shadow: 0 12px 40px rgba(12, 14, 20, 0.25); }
+  /* The header pill fills a narrow screen, so the toggle sits on a row below it
+     instead of on top of the document's title. */
+  .workspace-toggle { top: 88px; left: 12px; height: 36px; padding: 0 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .workspace-sidebar, body, #share-banner, .voice-dock { transition: none !important; }
@@ -205,6 +289,7 @@ export class WorkspaceSidebar {
   private readonly count = document.createElement('span');
   private readonly list = document.createElement('div');
   private readonly note = document.createElement('div');
+  private readonly foot = document.createElement('div');
   private readonly newButton = document.createElement('button');
   private readonly importButton = document.createElement('button');
   private readonly fileInput = document.createElement('input');
@@ -253,7 +338,7 @@ export class WorkspaceSidebar {
     this.newButton.className = 'workspace-btn';
     this.newButton.type = 'button';
     this.newButton.dataset.primary = '';
-    this.newButton.textContent = 'New';
+    this.newButton.textContent = 'New document';
     this.newButton.addEventListener('click', () => void this.createAndOpen());
     this.importButton.className = 'workspace-btn';
     this.importButton.type = 'button';
@@ -278,7 +363,9 @@ export class WorkspaceSidebar {
 
     this.list.className = 'workspace-list';
 
-    this.panel.append(head, actions, this.note, this.list, this.fileInput);
+    this.foot.className = 'workspace-foot';
+
+    this.panel.append(head, actions, this.note, this.list, this.foot, this.fileInput);
     document.body.append(this.toggle, this.panel);
 
     // Dropping files anywhere on the drawer imports them.
@@ -329,11 +416,19 @@ export class WorkspaceSidebar {
 
   private render(documents: WorkspaceDocument[]): void {
     this.count.textContent = documents.length ? String(documents.length) : '';
+    // Attribution only: this is a fork built on the SDK, not the hosted service.
+    const tally = document.createElement('div');
+    tally.textContent = `${documents.length} document${documents.length === 1 ? '' : 's'}, shared workspace`;
+    const credit = document.createElement('div');
+    credit.textContent = 'Built on Proof SDK';
+    this.foot.replaceChildren(tally, credit);
     this.list.replaceChildren();
     if (documents.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'workspace-empty';
-      empty.textContent = 'No documents yet. Create one, or import Markdown files to get started.';
+      const lead = document.createElement('strong');
+      lead.textContent = 'No documents yet';
+      empty.append(lead, 'Start a new document, or drop Markdown files here to import them.');
       this.list.appendChild(empty);
       return;
     }
@@ -351,7 +446,11 @@ export class WorkspaceSidebar {
       title.title = doc.title;
       const meta = document.createElement('div');
       meta.className = 'workspace-item-meta';
-      meta.textContent = doc.slug === current ? 'Open now' : `Edited ${relativeTime(doc.updatedAt)}`;
+      const chip = document.createElement('span');
+      chip.className = 'workspace-chip';
+      chip.dataset.type = doc.sourceType ?? 'md';
+      chip.textContent = doc.sourceType ?? 'md';
+      meta.append(chip, doc.slug === current ? 'Open now' : `Edited ${relativeTime(doc.updatedAt)}`);
       text.append(title, meta);
       item.innerHTML = DOC_ICON;
       item.appendChild(text);
@@ -370,15 +469,51 @@ export class WorkspaceSidebar {
         remove.innerHTML = CLOSE_ICON;
         remove.title = `Remove "${doc.title}"`;
         remove.setAttribute('aria-label', `Remove ${doc.title}`);
-        remove.addEventListener('click', () => void this.remove(doc));
+        remove.addEventListener('click', () => this.confirmRemove(row, doc));
         row.appendChild(remove);
       }
       this.list.appendChild(row);
     }
   }
 
+  // Asks in the row itself; a browser dialog would stop the page mid-demo.
+  private confirmRemove(row: HTMLElement, doc: WorkspaceDocument): void {
+    const original = Array.from(row.children);
+    const confirm = document.createElement('div');
+    confirm.className = 'workspace-confirm';
+    confirm.setAttribute('role', 'group');
+    confirm.setAttribute('aria-label', `Remove ${doc.title}?`);
+    const text = document.createElement('span');
+    text.className = 'workspace-confirm-text';
+    text.textContent = `Remove "${doc.title}"?`;
+    text.title = doc.title;
+    const keep = document.createElement('button');
+    keep.className = 'workspace-btn';
+    keep.type = 'button';
+    keep.textContent = 'Keep';
+    const restore = () => row.replaceChildren(...original);
+    keep.addEventListener('click', restore);
+    const yes = document.createElement('button');
+    yes.className = 'workspace-btn';
+    yes.type = 'button';
+    yes.dataset.danger = '';
+    yes.textContent = 'Remove';
+    yes.addEventListener('click', () => {
+      yes.disabled = true;
+      keep.disabled = true;
+      void this.remove(doc);
+    });
+    confirm.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      restore();
+    });
+    confirm.append(text, keep, yes);
+    row.replaceChildren(confirm);
+    keep.focus();
+  }
+
   private async remove(doc: WorkspaceDocument): Promise<void> {
-    if (!window.confirm(`Remove "${doc.title}" from the workspace?`)) return;
     const ok = await fetch(`${this.options.getApiBase()}/workspace/documents/${encodeURIComponent(doc.slug)}`, { method: 'DELETE' })
       .then((response) => response.ok)
       .catch(() => false);
@@ -398,11 +533,11 @@ export class WorkspaceSidebar {
     window.location.assign(url);
   }
 
-  private async create(title: string, markdown: string): Promise<{ url: string } | null> {
+  private async create(title: string, markdown: string, sourceType = 'md'): Promise<{ url: string } | null> {
     return fetch(`${this.options.getApiBase()}/workspace/documents`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, markdown }),
+      body: JSON.stringify({ title, markdown, sourceType }),
     })
       .then((response) => (response.ok ? (response.json() as Promise<{ url: string }>) : null))
       .catch(() => null);
@@ -434,7 +569,9 @@ export class WorkspaceSidebar {
       const markdown = await file.text().catch(() => null);
       // A document's own top heading is a better title than its filename.
       const title = markdown !== null && /^\s{0,3}#\s+\S/m.test(markdown) ? '' : titleFromFilename(file.name);
-      if (markdown === null || !(await this.create(title, markdown))) skipped.push(file.name);
+      const extension = file.name.split('.').pop()!.toLowerCase();
+      const sourceType = extension === 'markdown' ? 'md' : extension;
+      if (markdown === null || !(await this.create(title, markdown, sourceType))) skipped.push(file.name);
       else imported++;
     }
     this.setBusy(false);

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Proof Editor</title>
+  <title>Proof Live</title>
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=20260310r">
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=20260310r">
   <link rel="shortcut icon" href="/favicon.ico?v=20260310r">
@@ -23,8 +23,9 @@
       --a2-color: rgba(255, 255, 100, 0.25);
       --a3-color: rgba(100, 255, 100, 0.25);
       --a4-color: rgba(100, 200, 255, 0.25);
-      --human-color: #6EE7B7;
-      --ai-color: #A5B4FC;
+      /* Authorship: blue for the person, orange for the agent (see --pl-* below) */
+      --human-color: #2346C7;
+      --ai-color: #E8590C;
       --mixed-color: #9C27B0;
       --provenance-gutter-width: 60px;
       --provenance-bar-width: 6px;
@@ -44,6 +45,66 @@
       --heading-weight: bold;
       --heading-align: left;
       --text-align: left;
+    }
+
+    /* Chrome tokens (--pl-*). They sit beside the theme variables above and do
+       not replace them: themes style the document, these style the controls
+       around it. Components that inject their own styles read them with a
+       literal fallback. Two signal colours only, and they mean authorship:
+       blue for the person, orange for the agent. */
+    :root {
+      --pl-human: #2346C7;
+      --pl-human-wash: #EAF0FF;
+      --pl-human-on-ink: #8FB0FF;
+      --pl-agent: #B4430A;
+      --pl-agent-signal: #E8590C;
+      --pl-agent-wash: #FFF1E6;
+      --pl-agent-on-ink: #FF9A52;
+
+      --pl-paper: #F7F6F3;
+      --pl-paper-raised: #FFFFFF;
+      --pl-ink: #15171C;
+      --pl-ink-raised: #23262E;
+      --pl-text: #1B1D22;
+      --pl-text-muted: #5C6370;
+      --pl-text-on-ink: #F4F5F7;
+      --pl-text-on-ink-muted: #A9AFBA;
+      --pl-line: rgba(21, 23, 28, 0.10);
+      --pl-line-strong: rgba(21, 23, 28, 0.18);
+      --pl-line-on-ink: rgba(255, 255, 255, 0.14);
+
+      --pl-insert: #15803D;
+      --pl-delete: #B42318;
+      --pl-danger-on-ink: #FF8A8A;
+      --pl-focus: #2346C7;
+
+      --pl-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+      --pl-radius-chip: 5px;
+      --pl-radius-control: 9px;
+      --pl-radius-card: 14px;
+      --pl-radius-pill: 999px;
+
+      --pl-shadow-float: 0 1px 2px rgba(21, 23, 28, 0.20), 0 8px 28px rgba(21, 23, 28, 0.18);
+      --pl-shadow-card: 0 0 0 1px var(--pl-line), 0 2px 8px rgba(21, 23, 28, 0.06);
+
+      --pl-ease: cubic-bezier(0.2, 0, 0, 1);
+      --pl-dur-fast: 120ms;
+      --pl-dur-move: 200ms;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      :root {
+        --pl-dur-fast: 0ms;
+        --pl-dur-move: 0ms;
+      }
+    }
+
+    /* One focus ring for every control. :where() keeps this at zero specificity
+       so a component can still choose its own (the dark dock uses a lighter blue). */
+    :where(button, [role="button"], a, input, select, textarea, [tabindex]):focus-visible {
+      outline: 2px solid var(--pl-focus);
+      outline-offset: 2px;
     }
 
     /* Whitey Theme - Based on Typora Whitey Theme */
@@ -105,9 +166,10 @@
       width: 100%;
     }
 
+    /* The bottom padding lets the last lines scroll clear of the voice dock and its caption. */
     #editor {
       background: var(--bg-color);
-      padding: 60px 40px 40px;
+      padding: 60px 40px 176px;
       padding-left: calc(var(--provenance-bar-width) + 20px);
       min-height: 100vh;
       outline: none;
@@ -117,6 +179,27 @@
     body[data-share-mode="true"] #editor {
       padding: 80px 80px 40px;
       padding-left: calc(var(--provenance-bar-width) + 80px);
+    }
+
+    /* Wide screens: a centred reading column, with room on its left for the authorship bar */
+    @media (min-width: 900px) {
+      #editor-container {
+        max-width: 800px;
+      }
+      #editor {
+        padding: 104px 56px 176px;
+      }
+      #provenance-gutter {
+        width: 4px;
+      }
+    }
+
+    /* Narrow screens: the Documents and Changes pills sit on a row under the
+       header pill, so the text starts below both. */
+    @media (max-width: 899px) {
+      #editor-container {
+        padding-top: 40px;
+      }
     }
 
     /* Milkdown editor styles */
@@ -254,9 +337,69 @@
       box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.26);
     }
 
+    /* Wide screens: the review sheet is a card over the document, clear of the
+       workspace sidebar and above the voice dock, instead of a full-width slab
+       that slides under both. */
+    @media (min-width: 900px) {
+      .mark-popover.mark-popover-sheet {
+        left: 50% !important;
+        right: auto !important;
+        bottom: 92px !important;
+        width: min(560px, calc(100vw - 48px));
+        transform: translateX(-50%);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: var(--pl-radius-card);
+        padding: 14px 16px;
+        box-shadow: var(--pl-shadow-float);
+        font-size: 14px;
+      }
+      .workspace-open .mark-popover.mark-popover-sheet {
+        margin-left: 136px;
+        width: min(560px, calc(100vw - 272px - 48px));
+      }
+      .mark-popover.mark-popover-sheet .mark-popover-actions {
+        position: static;
+        background: none;
+      }
+    }
+
     .mark-popover-header {
       font-weight: 600;
       margin-bottom: 8px;
+    }
+
+    /* Who proposed a suggestion: a dot and a name in the authorship colours,
+       and the same colour down the card's left edge. */
+    .mark-popover-header[data-author] {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      --author: var(--pl-human-on-ink);
+    }
+    .mark-popover-header[data-author="agent"] {
+      --author: var(--pl-agent-on-ink);
+    }
+    .mark-popover-author {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--author);
+    }
+    .mark-popover-author::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--author);
+    }
+    .mark-popover:has(.mark-popover-header[data-author="agent"]) {
+      border-left: 3px solid var(--pl-agent-on-ink);
+    }
+    .mark-popover:has(.mark-popover-header[data-author="human"]) {
+      border-left: 3px solid var(--pl-human-on-ink);
     }
 
     .mark-popover-thread {
@@ -668,6 +811,15 @@
       font-weight: var(--heading-weight);
       text-align: var(--heading-align);
     }
+    :root:not([data-theme="whitey"]) .milkdown h1 {
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+    }
+    .milkdown h2,
+    .milkdown h3 {
+      margin-top: 1.6em;
+      line-height: 1.3;
+    }
     .milkdown h2 {
       font-size: 1.5em;
       margin-bottom: 0.5em;
@@ -711,6 +863,42 @@
       padding: 0;
       color: inherit;
     }
+    /* Tables had no styles at all, so cells ran into each other. */
+    .milkdown table {
+      border-collapse: collapse;
+      margin-bottom: 1em;
+      font-size: 0.95em;
+    }
+    .milkdown th,
+    .milkdown td {
+      padding: 8px 20px 8px 0;
+      border-bottom: 1px solid color-mix(in srgb, var(--text-color) 12%, var(--bg-color));
+      text-align: left;
+      vertical-align: top;
+    }
+    .milkdown th {
+      font-weight: 600;
+      border-bottom-color: color-mix(in srgb, var(--text-color) 35%, var(--bg-color));
+    }
+    .milkdown th p,
+    .milkdown td p {
+      margin: 0;
+    }
+    /* YAML front matter is metadata, not the document's opening: keep it quiet
+       instead of a black slab above the title. */
+    .milkdown pre[data-frontmatter="true"] {
+      background: var(--pl-paper);
+      color: var(--pl-text-muted);
+      border: 1px solid var(--pl-line);
+      border-radius: var(--pl-radius-control);
+      padding: 10px 14px;
+      margin-bottom: 2em;
+      font-size: 0.78em;
+      line-height: 1.55;
+    }
+    .milkdown pre[data-frontmatter="true"].ProseMirror-selectednode {
+      background: var(--pl-paper) !important;
+    }
     .proof-code-block {
       margin-bottom: 1em;
     }
@@ -729,11 +917,15 @@
       overflow-x: auto;
       padding: 24px;
     }
+    /* Drawn at its natural size and centred: a three-box flow stretched to the
+       column width fills the screen. Wide diagrams shrink to fit. */
     .proof-mermaid-svg {
       display: block;
-      width: 100%;
-      min-width: 640px;
+      width: auto;
+      max-width: 100%;
       height: auto;
+      max-height: 560px;
+      margin: 0 auto;
     }
     .proof-mermaid-status {
       padding: 14px 16px 0;
@@ -776,9 +968,16 @@
       .proof-mermaid-preview {
         padding: 16px;
       }
-      .proof-mermaid-svg {
-        min-width: 520px;
-      }
+    }
+    /* Pictures stay inside the text column, and a tall one does not take over the page. */
+    .milkdown img[src]:not(.ProseMirror-separator) {
+      display: block;
+      max-width: 100%;
+      max-height: 460px;
+      width: auto;
+      height: auto;
+      margin: 0.6em auto;
+      border-radius: 6px;
     }
     .milkdown blockquote {
       border-left: 4px solid var(--blockquote-border);
@@ -855,7 +1054,7 @@
       box-shadow: 0 6px 16px rgba(15, 23, 42, 0.2);
     }
     .markdown-link-action-card-open:focus-visible {
-      outline: 2px solid #0ea5e9;
+      outline: 2px solid var(--pl-focus);
       outline-offset: 2px;
     }
     .markdown-link-action-card[data-armed="true"] .markdown-link-action-card-open {
@@ -902,6 +1101,64 @@
       border-radius: 0;
       background: white;
       color: #333;
+    }
+
+    /* Unexpected errors: a quiet toast in the corner (see the script at the end of the page) */
+    .pl-toast {
+      position: fixed;
+      left: 16px;
+      bottom: 16px;
+      z-index: 999999;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      box-sizing: border-box;
+      max-width: min(400px, calc(100vw - 32px));
+      padding: 12px 12px 12px 14px;
+      border-left: 3px solid var(--pl-danger-on-ink);
+      border-radius: var(--pl-radius-card);
+      background: var(--pl-ink);
+      color: var(--pl-text-on-ink);
+      box-shadow: var(--pl-shadow-float);
+      font: 400 13px/1.45 var(--pl-font);
+    }
+    .pl-toast strong {
+      font-weight: 600;
+    }
+    .pl-toast-detail {
+      display: block;
+      margin-top: 4px;
+      color: var(--pl-text-on-ink-muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    .pl-toast-close {
+      all: unset;
+      flex-shrink: 0;
+      padding: 4px 8px;
+      border-radius: var(--pl-radius-control);
+      color: var(--pl-text-on-ink-muted);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .pl-toast-close:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--pl-text-on-ink);
+    }
+    .pl-toast-close:focus-visible {
+      outline: 2px solid var(--pl-human-on-ink);
+      outline-offset: 2px;
+    }
+    @media (min-width: 900px) {
+      .workspace-open .pl-toast {
+        left: 288px;
+      }
+    }
+    @media print {
+      .pl-toast {
+        display: none;
+      }
     }
 
     /* Loading state */
@@ -1047,23 +1304,35 @@
         return true; // Suppress the error
       }
 
-      var errorDiv = document.createElement('div');
-      errorDiv.id = 'error-banner-' + Date.now();
-      errorDiv.style.cssText = 'position:fixed;top:0;left:0;right:0;background:red;color:white;padding:10px;z-index:999999;font-family:monospace;font-size:12px;cursor:pointer;';
-      errorDiv.textContent = 'JS Error: ' + msg + ' at ' + url + ':' + line + ' (click to dismiss)';
-      errorDiv.onclick = function() { errorDiv.remove(); };
-      document.body.appendChild(errorDiv);
+      showErrorToast(String(msg) + ' at ' + url + ':' + line);
       return false;
     };
     window.addEventListener('unhandledrejection', function(e) {
       console.error('[unhandledrejection]', e.reason);
-      var errorDiv = document.createElement('div');
-      errorDiv.id = 'rejection-banner-' + Date.now();
-      errorDiv.style.cssText = 'position:fixed;top:0;left:0;right:0;background:orange;color:white;padding:10px;z-index:999999;font-family:monospace;font-size:12px;cursor:pointer;';
-      errorDiv.textContent = 'Promise rejection: ' + (e.reason ? e.reason.message || e.reason : 'unknown') + ' (click to dismiss)';
-      errorDiv.onclick = function() { errorDiv.remove(); };
-      document.body.appendChild(errorDiv);
+      showErrorToast(String(e.reason ? e.reason.message || e.reason : 'unknown'));
     });
+
+    // One quiet toast in the corner instead of a red bar across the page. The
+    // full error is in the console; the toast keeps the latest message and a count.
+    var errorToastCount = 0;
+    function showErrorToast(detail) {
+      errorToastCount += 1;
+      var toast = document.getElementById('pl-error-toast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'pl-error-toast';
+        toast.className = 'pl-toast';
+        toast.setAttribute('role', 'status');
+        toast.innerHTML = '<div class="pl-toast-text"><strong>Something went wrong.</strong> The details are in the console.<span class="pl-toast-detail"></span></div><button type="button" class="pl-toast-close" aria-label="Dismiss">Dismiss</button>';
+        toast.querySelector('.pl-toast-close').onclick = function() {
+          errorToastCount = 0;
+          toast.remove();
+        };
+        document.body.appendChild(toast);
+      }
+      var more = errorToastCount > 1 ? ' (and ' + (errorToastCount - 1) + ' more)' : '';
+      toast.querySelector('.pl-toast-detail').textContent = detail.slice(0, 160) + more;
+    }
     console.log('[HTML] Error handlers installed');
   </script>
   <script type="module" src="./editor/index.ts"></script>

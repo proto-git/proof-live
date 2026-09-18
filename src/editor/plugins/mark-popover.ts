@@ -21,6 +21,7 @@ import {
 import {
   getThread,
   getActorName,
+  isAI,
   type Mark,
   type CommentData,
   type InsertData,
@@ -1220,6 +1221,15 @@ class MarkPopoverController {
     const header = document.createElement('div');
     header.className = 'mark-popover-header';
     header.textContent = 'Suggestion';
+    // Who proposed it, in the same colours as the authorship bar.
+    if (mark.by) {
+      const fromAgent = isAI(mark.by);
+      header.dataset.author = fromAgent ? 'agent' : 'human';
+      const author = document.createElement('span');
+      author.className = 'mark-popover-author';
+      author.textContent = fromAgent ? 'Agent' : getActorName(mark.by);
+      header.appendChild(author);
+    }
 
     const body = document.createElement('div');
     body.className = 'mark-popover-body';

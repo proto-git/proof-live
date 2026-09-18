@@ -24,6 +24,8 @@ interface Harness {
   nextResponse: { status: number; body: Record<string, unknown> };
   // When false, suggestions the server accepts never show up in the editor.
   marksSync: boolean;
+  // Overrides the editor's Markdown snapshot.
+  markdown?: string;
 }
 
 function createHarness(): Harness {
@@ -41,6 +43,7 @@ function createHarness(): Harness {
     getSelectionContext: () => harness.selection,
     getMarkdownSnapshot: () => ({
       content:
+        harness.markdown ??
         '# Title\n\n<span data-proof="suggestion" data-id="x">Old line</span>\n\n<!-- PROOF\n{"version":2}\n-->\n\n<!-- PROOF:END -->\n',
     }),
     getPendingMarkSuggestions: () => harness.pending,
@@ -305,6 +308,82 @@ async function run(): Promise<void> {
   const ambiguous = await h.runner.run('read_document', { document: 'platform update' });
   assertEqual((ambiguous.matches as unknown[]).length, 2, 'an ambiguous name returns the candidates instead of guessing');
   assertEqual(typeof (await h.runner.run('read_document', { document: 'roadmap' })).error, 'string', 'an unknown document is an error');
+
+  // A Mermaid diagram has no blank line and no block marker, but it is still a
+  // block of its own: it goes in beside the anchor, not into the anchor's sentence.
+  h = createHarness();
+  await h.runner.run('suggest_insert', { anchor_quote: 'Old line', content: '```mermaid\ngraph TD\n  A --> B\n```' });
+  assertEqual(h.requests[0].body.content, 'Old line\n\n```mermaid\ngraph TD\n  A --> B\n```', 'a fenced block is inserted as its own block');
+
+  // Editing a diagram that is already there. Whatever shape the model sends, the
+  // suggestion is "the whole block, replaced by a whole fenced block": unfenced
+  // code is parsed as prose on accept and the diagram falls apart.
+  const diagram = 'graph TD\n    A[Step] --> B[Reference]';
+  const diagramDoc = `# Title\n\nIntro.\n\n\`\`\`mermaid proof:W3sidHlw==\n${diagram}\n\`\`\`\n\nOutro.\n\n<!-- PROOF\n{"version":2}\n-->\n`;
+  h = createHarness();
+  h.markdown = diagramDoc;
+  assertEqual(
+    (await h.runner.run('get_document', {})).markdown,
+    `# Title\n\nIntro.\n\n\`\`\`mermaid\n${diagram}\n\`\`\`\n\nOutro.`,
+    'the model never sees the provenance on a code fence',
+  );
+  const recoloured = `${diagram}\n\n    style A fill:#dbeafe`;
+  await h.runner.run('suggest_replace', { quote: diagram, replacement: recoloured });
+  assertEqual(
+    [h.requests[0].body.quote, h.requests[0].body.content],
+    [diagram, `\`\`\`mermaid\n${recoloured}\n\`\`\``],
+    'raw replacement code is fenced again',
+  );
+
+  h = createHarness();
+  h.markdown = diagramDoc;
+  await h.runner.run('suggest_replace', { quote: `\`\`\`mermaid\ngraph TD\nA[Step] --> B[Reference]\n\`\`\``, replacement: `\`\`\`mermaid\n${recoloured}\n\`\`\`` });
+  assertEqual(
+    [h.requests[0].body.quote, h.requests[0].body.content],
+    [diagram, `\`\`\`mermaid\n${recoloured}\n\`\`\``],
+    'a fenced, loosely indented quote still targets the whole block, and the fence is not doubled',
+  );
+
+  h = createHarness();
+  h.markdown = diagramDoc;
+  await h.runner.run('suggest_replace', { quote: 'B[Reference]', replacement: 'B[Disclosed reference]' });
+  assertEqual(
+    [h.requests[0].body.quote, h.requests[0].body.content],
+    [diagram, '```mermaid\ngraph TD\n    A[Step] --> B[Disclosed reference]\n```'],
+    'a change to one label still replaces the whole block',
+  );
+
+  h = createHarness();
+  h.markdown = diagramDoc;
+  await h.runner.run('suggest_replace', { quote: 'Intro.', replacement: 'A better intro.' });
+  assertEqual(h.requests[0].body.content, 'A better intro.', 'prose next to a diagram is edited as before');
+
+  // Images: generated on the server, then proposed like any other block insert.
+  h = createHarness();
+  const realFetch = (globalThis as any).fetch;
+  (globalThis as any).fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (!String(input).endsWith('/live/image')) return realFetch(input, init);
+    h.requests.push({ url: String(input), headers: (init?.headers ?? {}) as Record<string, string>, body: JSON.parse(String(init?.body)) });
+    return new Response(JSON.stringify({ url: '/generated/abc.png' }), { status: 200 });
+  };
+  const pictured = await h.runner.run('insert_image', { anchor_quote: 'Old line', prompt: 'An orange on a white table', alt: 'An [orange]' });
+  assertEqual(pictured.ok, true, 'insert_image reports a pending suggestion');
+  assertEqual(h.requests[0].body, { slug: 'doc 1', prompt: 'An orange on a white table', aspectRatio: '', transparent: false }, 'image request carries the document and prompt');
+  assertEqual(h.requests[0].headers['x-share-token'], 'tok', 'image request presents the edit token');
+  assertEqual(h.requests[1].body.content, 'Old line\n\n![An  orange](/generated/abc.png)', 'the image lands after its anchor with safe alt text');
+
+  // No anchor, no image: the quota is not spent on a picture that cannot be placed.
+  h = createHarness();
+  const unplaced = await h.runner.run('insert_image', { anchor_quote: 'Not in the document', prompt: 'An orange' });
+  assertEqual(typeof unplaced.error, 'string', 'an unknown anchor is an error');
+  assertEqual(h.requests.length, 0, 'nothing is generated for an unknown anchor');
+
+  // A failed generation is reported as such and leaves the document alone.
+  h = createHarness();
+  h.nextResponse = { status: 429, body: { error: 'The image model has no quota on this server\'s API key' } };
+  const failed = await h.runner.run('insert_image', { anchor_quote: 'Old line', prompt: 'An orange' });
+  assertEqual(/no quota/.test(String(failed.error)), true, 'the server reason reaches the agent');
+  assertEqual(h.requests.length, 1, 'no suggestion is made when generation fails');
 
   console.log('voice-tools: all assertions passed');
 }

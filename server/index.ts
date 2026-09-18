@@ -16,6 +16,7 @@ import {
   enforceBridgeClientCompatibility,
 } from './client-capabilities.js';
 import { getBuildInfo } from './build-info.js';
+import { imageRoutes, serveGeneratedImage } from './image-routes.js';
 import { liveRoutes } from './live-routes.js';
 import { handleWorkspaceEntry, workspaceRoutes } from './workspace-routes.js';
 
@@ -128,6 +129,8 @@ async function main(): Promise<void> {
 
   app.use(discoveryRoutes);
   app.use('/api', liveRoutes);
+  app.use('/api', imageRoutes);
+  app.get('/generated/:file', serveGeneratedImage);
   app.use('/api', workspaceRoutes);
   app.get('/workspace', handleWorkspaceEntry);
   app.use('/api', enforceApiClientCompatibility, apiRoutes);

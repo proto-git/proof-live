@@ -69,10 +69,12 @@ const BLOCK_ANCHOR_REQUIRED =
 const LIST_ANCHOR_REFUSED =
   'New blocks cannot be anchored on a list item. To add content after a list, anchor on the heading or paragraph that follows the list and pass position "before". To add an item to the list itself, use suggest_replace on the last item with both items as the replacement.';
 
-// Content that introduces its own block: a heading, a list, a quote, or more
-// than one paragraph. Anything else is inline text that joins the anchor's block.
+// Content that introduces its own block: a heading, a list, a quote, a fenced
+// block (a Mermaid diagram), an image on its own, or more than one paragraph.
+// Anything else is inline text that joins the anchor's block.
 function isBlockContent(content: string): boolean {
   const trimmed = content.trim();
+  if (/^(?:```|~~~)/.test(trimmed) || /^!\[[^\]]*\]\([^)]+\)$/.test(trimmed)) return true;
   return /\n\s*\n/.test(trimmed) || BLOCK_PREFIX.test(trimmed) || /\n\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s|>)/.test(trimmed);
 }
 
@@ -110,6 +112,57 @@ function findWholeBlock(markdown: string, anchor: string): { raw: string; kind: 
   return null;
 }
 
+// A fenced block (a Mermaid diagram, a code sample) is one unit to the editor. An
+// edit inside it has to arrive as "the whole block, replaced by a whole fenced
+// block": replacement code without its fence is parsed as prose on accept, which
+// turns the diagram into a paragraph plus a stray code block.
+interface FencedBlock {
+  info: string;
+  code: string;
+}
+
+const FENCE_LINE = /^\s{0,3}(`{3,}|~{3,})\s*(.*)$/;
+
+function findFencedBlocks(markdown: string): FencedBlock[] {
+  const blocks: FencedBlock[] = [];
+  let open: { marker: string; info: string; lines: string[] } | null = null;
+  for (const line of markdown.split('\n')) {
+    const fence = line.match(FENCE_LINE);
+    if (!open) {
+      if (fence) open = { marker: fence[1], info: fence[2].trim(), lines: [] };
+    } else if (fence && fence[1].startsWith(open.marker) && !fence[2].trim()) {
+      blocks.push({ info: open.info, code: open.lines.join('\n') });
+      open = null;
+    } else open.lines.push(line);
+  }
+  return blocks;
+}
+
+function stripFence(text: string): string {
+  const lines = text.trim().split('\n');
+  if (lines.length >= 2 && FENCE_LINE.test(lines[0]) && FENCE_LINE.test(lines[lines.length - 1])) return lines.slice(1, -1).join('\n');
+  return text;
+}
+
+// Code compared without its indentation and blank lines, which is how loosely a model copies it.
+function looseCode(text: string): string {
+  return text.split('\n').map((line) => line.trim()).filter(Boolean).join('\n');
+}
+
+function fencedEdit(markdown: string, quote: string, replacement: string): { quote: string; content: string } | null {
+  const quoted = stripFence(quote);
+  const wanted = looseCode(quoted);
+  if (!wanted) return null;
+  const block = findFencedBlocks(markdown).find((candidate) => looseCode(candidate.code).includes(wanted));
+  if (!block) return null;
+  const whole = looseCode(block.code) === wanted;
+  // Part of the code quoted: swap that part. If it is not there character for
+  // character, the model has to quote the whole block instead.
+  if (!whole && !block.code.includes(quoted.trim())) return null;
+  const code = whole ? stripFence(replacement).replace(/^\n+|\s+$/g, '') : block.code.replace(quoted.trim(), stripFence(replacement).trim());
+  return { quote: block.code, content: '```' + block.info + '\n' + code + '\n```' };
+}
+
 const QUOTE_NOT_FOUND =
   'That exact text was not found in the document. Call get_selection or get_document, copy the passage character for character, and try again.';
 
@@ -127,6 +180,8 @@ function stripReviewMetadata(markdown: string): string {
   return markdown
     .replace(/<!--\s*PROOF[\s\S]*$/, '')
     .replace(/<span data-proof="[^"]*"[^>]*>([\s\S]*?)<\/span>/g, '$1')
+    // An accepted code fence carries its provenance on the info string.
+    .replace(/^(\s*(?:`{3,}|~{3,})\S*) proof:\S+$/gm, '$1')
     .trimEnd();
 }
 
@@ -196,6 +251,8 @@ export class VoiceToolRunner {
         const quote = stripped.text;
         let content = asString(args.replacement);
         if (!quote || !content) return { error: 'quote and replacement are required' };
+        const fenced = fencedEdit(stripReviewMetadata(editor.getMarkdownSnapshot()?.content ?? ''), asString(args.quote), content);
+        if (fenced) return this.addSuggestion({ kind: 'replace', ...fenced }, { wholeBlock: true });
         // "# Old title" -> "# New title" means the text changes and the block
         // stays what it is, so the same marker comes off the replacement too.
         const contentPrefix = stripBlockPrefix(content);
@@ -208,6 +265,13 @@ export class VoiceToolRunner {
         const content = asString(args.content);
         if (!quote || !content) return { error: 'anchor_quote and content are required' };
         return this.addInsertion(quote, content, args.position === 'before' ? 'before' : 'after');
+      }
+
+      case 'insert_image': {
+        const quote = stripBlockPrefix(asString(args.anchor_quote)).text;
+        const prompt = asString(args.prompt).trim();
+        if (!quote || !prompt) return { error: 'anchor_quote and prompt are required' };
+        return this.addImage(quote, prompt, asString(args.alt), asString(args.aspect_ratio), args.transparent_background === true, args.position === 'before' ? 'before' : 'after');
       }
 
       case 'suggest_delete': {
@@ -332,11 +396,49 @@ export class VoiceToolRunner {
     return this.addSuggestion({ kind: 'replace', quote: anchor, content: replacement });
   }
 
-  private async addSuggestion(op: { kind: 'replace' | 'insert' | 'delete'; quote: string; content?: string }): Promise<ToolResult> {
+  // The anchor is checked before the image is made: generating costs quota and
+  // several seconds, and a picture that cannot be placed is wasted.
+  private async addImage(
+    anchor: string,
+    prompt: string,
+    alt: string,
+    aspectRatio: string,
+    transparent: boolean,
+    position: 'before' | 'after',
+  ): Promise<ToolResult> {
+    const snapshot = stripReviewMetadata(this.context.editor.getMarkdownSnapshot()?.content ?? '');
+    const block = findWholeBlock(snapshot, anchor);
+    if (!block) return { error: BLOCK_ANCHOR_REQUIRED };
+    if (block.kind === 'list') return { error: LIST_ANCHOR_REFUSED };
+
+    const { slug, shareToken, apiBase } = this.context;
+    const response = await fetch(`${apiBase}/live/image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-share-token': shareToken },
+      body: JSON.stringify({ slug, prompt, aspectRatio, transparent }),
+    });
+    const body = (await response.json().catch(() => null)) as { url?: string; error?: string; transparent?: boolean } | null;
+    if (!response.ok || !body?.url) {
+      return { error: `${body?.error ?? 'The image could not be generated'}. Nothing was added to the document. Tell the author; do not retry unless they ask.` };
+    }
+    const label = (alt.trim() || prompt).replace(/[\[\]\n]/g, ' ').slice(0, 120).trim();
+    const result = await this.addInsertion(anchor, `![${label}](${body.url})`, position);
+    // The cut-out can fail when the model does not draw a plain background.
+    if (transparent && body.transparent === false && result.ok) {
+      return { ...result, note: 'The background could not be removed, so the image has a plain background. Tell the author.' };
+    }
+    return result;
+  }
+
+  private async addSuggestion(
+    op: { kind: 'replace' | 'insert' | 'delete'; quote: string; content?: string },
+    options?: { wholeBlock?: boolean },
+  ): Promise<ToolResult> {
     // The editor can display a suggestion that spans paragraphs but cannot apply
     // one, so it would sit there unacceptable. One block per suggestion; the
     // replacement itself may still be several blocks (a paragraph into a list).
-    if (/\n\s*\n/.test(op.quote.trim())) return { error: MULTI_BLOCK_QUOTE };
+    // (A fenced block is one block however many blank lines its code has.)
+    if (!options?.wholeBlock && /\n\s*\n/.test(op.quote.trim())) return { error: MULTI_BLOCK_QUOTE };
 
     // Two pending suggestions on the same text cannot both be shown: the editor
     // renders one suggestion mark per range and thrashes when two compete. Make

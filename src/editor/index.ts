@@ -147,6 +147,8 @@ import { fileClient } from '../bridge/file-client';
 import { shareClient, type CollabSessionInfo, type SharePendingEvent } from '../bridge/share-client';
 import { VoicePanel } from '../voice/panel';
 import { WorkspaceSidebar } from '../workspace/sidebar';
+import { ChangesView } from '../changes/view';
+import { downloadMarkdown, exportFilename, toCleanMarkdown } from '../export/clean-markdown';
 import { collabClient, type CollabSyncStatus } from '../bridge/collab-client';
 import { shouldDeferShareMarksRefresh } from './share-marks-refresh';
 import { collabCursorBuilder, collabSelectionBuilder } from './plugins/collab-cursors';
@@ -1410,7 +1412,8 @@ class ProofEditorImpl implements ProofEditor {
       }
 
       // Set title
-      document.title = doc.title ? `${doc.title} - Proof` : 'Shared Document - Proof';
+      // A working title of our own: this fork is not the hosted Proof service (see TRADEMARKS.md).
+      document.title = doc.title ? `${doc.title} - Proof Live` : 'Shared document - Proof Live';
       this.shareDocTitle = typeof doc.title === 'string' && doc.title.trim().length > 0
         ? doc.title.trim()
         : 'Untitled';
@@ -3321,7 +3324,7 @@ class ProofEditorImpl implements ProofEditor {
     const normalized = typeof title === 'string' ? title.trim() : '';
     const nextTitle = normalized.length > 0 ? normalized : 'Untitled';
     this.shareDocTitle = nextTitle;
-    document.title = `${nextTitle} - Proof`;
+    document.title = `${nextTitle} - Proof Live`;
     this.updateShareBannerTitleDisplay();
   }
 
@@ -4143,6 +4146,11 @@ class ProofEditorImpl implements ProofEditor {
       };
 
       addItem('Copy link', async () => this.copyLinkWithFallback(this.getCanonicalShareUrl()));
+      addDivider();
+      // The final draft: prose only, without suggestions, authorship, or review metadata.
+      const finalDraft = () => toCleanMarkdown(this.getMarkdownSnapshot()?.content ?? '', window.location.origin);
+      addActionItem('Download Markdown', () => downloadMarkdown(exportFilename(this.shareDocTitle), finalDraft()));
+      addItem('Copy Markdown', async () => this.copyTextToClipboard(finalDraft()));
       addDivider();
       addActionItem('View activity', () => this.openShareActivityModal());
 
@@ -10305,6 +10313,15 @@ function mountWorkspaceSidebar(): void {
     .catch((error) => console.warn('[workspace] sidebar failed to mount', error));
 }
 
+// Before/after view of what changed since the document was opened in this tab.
+function mountChangesView(): void {
+  if (!window.location?.pathname?.startsWith('/d/')) return;
+  new ChangesView({
+    getSlug: () => shareClient.getSlug(),
+    getMarkdown: () => window.proof.getMarkdownSnapshot()?.content ?? '',
+  }).mount();
+}
+
 // Expose freeform prompt for sidebar
 (window as any).sendAgentPrompt = (prompt: string) => {
   // Refresh document content before triggering so the agent sees current state
@@ -10362,6 +10379,7 @@ if (document.readyState === 'loading') {
     void window.proof.init().then(() => {
       mountVoicePanel();
       mountWorkspaceSidebar();
+      mountChangesView();
     });
   });
 } else {
@@ -10369,6 +10387,7 @@ if (document.readyState === 'loading') {
   void window.proof.init().then(() => {
     mountVoicePanel();
     mountWorkspaceSidebar();
+    mountChangesView();
   });
 }
 

@@ -11,7 +11,7 @@ import { randomUUID } from 'crypto';
 import { Router, type Request, type Response } from 'express';
 import { canonicalizeStoredMarks } from '../src/formats/marks.js';
 import { ensureCanonicalYjsBaselineForDocument, stripEphemeralCollabSpans } from './collab.js';
-import { createDocument, createDocumentAccessToken, deleteDocument, getDocumentBySlug, listActiveDocuments } from './db.js';
+import { createDocument, createDocumentAccessToken, deleteDocument, getDb, getDocumentBySlug, listActiveDocuments } from './db.js';
 import { createRateLimiter } from './rate-limiter.js';
 import { generateSlug } from './slug.js';
 import { refreshSnapshotForSlug } from './snapshot.js';
@@ -45,7 +45,27 @@ function toPlainMarkdown(markdown: string): string {
   return markdown
     .replace(/<!--\s*PROOF[\s\S]*$/, '')
     .replace(/<span data-proof="[^"]*"[^>]*>([\s\S]*?)<\/span>/g, '$1')
+    .replace(/^(\s*(?:`{3,}|~{3,})\S*) proof:\S+$/gm, '$1')
     .trimEnd();
+}
+
+// What a document was when it came in, for the explorer's type chip. Everything
+// is stored as Markdown; this only remembers the file it started as.
+const SOURCE_TYPES = new Set(['md', 'mdx', 'txt']);
+let sourceTypeTableReady = false;
+
+function sourceTypeDb() {
+  const d = getDb();
+  if (!sourceTypeTableReady) {
+    d.exec('CREATE TABLE IF NOT EXISTS workspace_source_types (slug TEXT PRIMARY KEY, source_type TEXT NOT NULL)');
+    sourceTypeTableReady = true;
+  }
+  return d;
+}
+
+function readSourceTypes(): Map<string, string> {
+  const rows = sourceTypeDb().prepare('SELECT slug, source_type FROM workspace_source_types').all() as Array<{ slug: string; source_type: string }>;
+  return new Map(rows.map((row) => [row.slug, row.source_type]));
 }
 
 function titleFromMarkdown(markdown: string): string | null {
@@ -53,9 +73,13 @@ function titleFromMarkdown(markdown: string): string | null {
   return heading ? heading[1].trim() : null;
 }
 
-function describe(row: { slug: string; title: string | null; markdown: string; updated_at: string; created_at: string }) {
+function describe(
+  row: { slug: string; title: string | null; markdown: string; updated_at: string; created_at: string },
+  sourceType: string = 'md',
+) {
   return {
     slug: row.slug,
+    sourceType,
     title: (row.title || '').trim() || titleFromMarkdown(row.markdown) || 'Untitled',
     updatedAt: row.updated_at,
     createdAt: row.created_at,
@@ -86,8 +110,9 @@ workspaceRoutes.use('/workspace', (_req: Request, res: Response, next) => {
 });
 
 workspaceRoutes.get('/workspace/documents', (_req: Request, res: Response) => {
+  const sourceTypes = readSourceTypes();
   const documents = listWorkspaceDocuments()
-    .map(describe)
+    .map((doc) => describe(doc, sourceTypes.get(doc.slug)))
     .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
     .slice(0, MAX_LISTED_DOCUMENTS);
   res.json({ documents });
@@ -102,6 +127,7 @@ workspaceRoutes.post('/workspace/documents', writeRateLimiter, async (req: Reque
     return;
   }
 
+  const sourceType = typeof body.sourceType === 'string' && SOURCE_TYPES.has(body.sourceType) ? body.sourceType : 'md';
   const title = rawTitle || titleFromMarkdown(rawMarkdown) || 'Untitled';
   // An empty document has nothing for the collab baseline to anchor on.
   const markdown = stripEphemeralCollabSpans(rawMarkdown).trim() ? stripEphemeralCollabSpans(rawMarkdown) : `# ${title}\n`;
@@ -111,9 +137,12 @@ workspaceRoutes.post('/workspace/documents', writeRateLimiter, async (req: Reque
     const doc = createDocument(slug, markdown, canonicalizeStoredMarks({}), title, WORKSPACE_OWNER_ID, randomUUID());
     await ensureCanonicalYjsBaselineForDocument(slug);
     refreshSnapshotForSlug(slug);
+    if (sourceType !== 'md') {
+      sourceTypeDb().prepare('INSERT OR REPLACE INTO workspace_source_types (slug, source_type) VALUES (?, ?)').run(slug, sourceType);
+    }
     const access = createDocumentAccessToken(slug, 'editor');
     res.status(201).json({
-      document: describe(doc),
+      document: describe(doc, sourceType),
       url: `/d/${encodeURIComponent(slug)}?token=${encodeURIComponent(access.secret)}`,
     });
   } catch (error) {

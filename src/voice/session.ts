@@ -61,7 +61,7 @@ export interface LiveSocketCallbacks {
 // lifecycle (stop during startup, socket rotation) can be tested without either.
 export interface VoiceSessionDeps {
   createMic(): Pick<MicCapture, 'start' | 'stop' | 'setMuted' | 'isMuted'>;
-  createPlayer(onSpeakingChange: (speaking: boolean) => void): Pick<PcmPlayer, 'resume' | 'enqueue' | 'flush' | 'close'>;
+  createPlayer(onSpeakingChange: (speaking: boolean) => void): Pick<PcmPlayer, 'resume' | 'enqueue' | 'flush' | 'close' | 'getLevel'>;
   openSocket(grant: TokenGrant, callbacks: LiveSocketCallbacks): Promise<LiveSocket>;
   fetch: typeof fetch;
   delay(ms: number): Promise<void>;
@@ -136,6 +136,11 @@ export class VoiceSession {
 
   setMuted(muted: boolean): void {
     this.mic.setMuted(muted);
+  }
+
+  // Loudness of the agent's voice as it plays (RMS, 0..1). Display only.
+  getAgentLevel(): number {
+    return this.player.getLevel();
   }
 
   // A typed turn on the live conversation. The agent answers it exactly as it

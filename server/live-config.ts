@@ -34,6 +34,11 @@ How to work:
 - "Try again" means reject your last suggestions, then suggest a new version that follows their feedback.
 - Use leave_comment for questions, concerns, or notes that are not a concrete text change.
 
+Diagrams and images:
+- When asked for a diagram, flowchart, or "a visual of this process", write Mermaid and add it with suggest_insert. The content is a fenced code block whose language is mermaid, anchored on the paragraph or heading it illustrates. Keep to flowcharts ("graph TD" or "graph LR") with short node labels in square brackets and plain "-->" arrows; add edge labels as "A -->|label| B". Do not use quotes, parentheses, or punctuation inside labels.
+- To change a diagram that is already in the document (add a node, recolour the boxes, relabel an arrow), call suggest_replace with the diagram's current code as "quote" and the complete new diagram code as "replacement". Colour a box with a line such as "style A fill:#dbeafe,stroke:#1e40af". Keep the code free of blank lines.
+- When asked to generate, create, or draw an image, call insert_image. Write the prompt yourself as a full visual description (subject, style, lighting, background, framing), not the author's words verbatim. For a transparent background or a cut-out, set transparent_background to true and leave the background out of the prompt. It takes several seconds, and the picture arrives as a suggestion like any other change.
+
 Style:
 - Speak briefly, like a colleague at the next desk. One or two sentences unless asked for more.
 - Match the register the author asks for. If they want professional and instructional, remove hype, hooks, and filler.
@@ -84,6 +89,27 @@ const TOOL_DECLARATIONS = [
         },
       },
       required: ['anchor_quote', 'content'],
+    },
+  },
+  {
+    name: 'insert_image',
+    description:
+      'Generate an image from a text prompt and propose adding it next to an anchor, as a tracked suggestion. The anchor must be a whole paragraph or a whole heading quoted in full, never a list item.',
+    behavior: 'BLOCKING',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        anchor_quote: { type: 'string', description: 'Exact existing paragraph or heading the image goes next to.' },
+        prompt: { type: 'string', description: 'Full visual description of the image to generate.' },
+        alt: { type: 'string', description: 'Short alt text describing the image for readers.' },
+        position: { type: 'string', enum: ['after', 'before'], description: 'Where the image goes relative to the anchor. Defaults to after.' },
+        aspect_ratio: { type: 'string', enum: ['1:1', '3:4', '4:3', '9:16', '16:9'], description: 'Defaults to 1:1.' },
+        transparent_background: {
+          type: 'boolean',
+          description: 'Set true when the author wants a transparent background or a cut-out. Describe only the subject in the prompt; the background is removed after generation.',
+        },
+      },
+      required: ['anchor_quote', 'prompt'],
     },
   },
   {

@@ -2611,6 +2611,30 @@ function applyMarkdownReplace(
     }
   }
 
+  // A block insert arrives as "anchor plus new blocks". Keep the anchor node itself,
+  // with its authorship and comments, and only add the new blocks beside it, so the
+  // accepting agent is not credited with text it never wrote.
+  if (
+    replacement instanceof Fragment
+    && replacement.childCount > 1
+    && replaceFrom === analysis.parentStart
+    && replaceTo === analysis.parentEnd
+  ) {
+    const original = docBefore.nodeAt(analysis.parentStart);
+    const first = replacement.firstChild;
+    const last = replacement.lastChild;
+    const sameBlock = (node: ProseMirrorNode | null) => Boolean(
+      node && original && node.hasMarkup(original.type, original.attrs) && node.textContent === original.textContent
+    );
+    if (sameBlock(first)) {
+      replacement = replacement.cut(first!.nodeSize);
+      replaceFrom = replaceTo;
+    } else if (sameBlock(last)) {
+      replacement = replacement.cut(0, replacement.size - last!.nodeSize);
+      replaceTo = replaceFrom;
+    }
+  }
+
   try {
     tr = tr.replaceWith(replaceFrom, replaceTo, replacement);
   } catch (error) {
